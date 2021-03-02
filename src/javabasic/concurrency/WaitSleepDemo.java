@@ -1,6 +1,6 @@
-package javabasic.thread;
+package javabasic.concurrency;
 
-public class WaitSleepDemo1 {
+public class WaitSleepDemo {
     public static void main(String[] args) {
 //        verifyWait();
         verifySleep();
