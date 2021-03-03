@@ -8,5 +8,6 @@ public class LoadDifference {
         ClassLoader defaultClassLoader = Robot.class.getClassLoader();
         Class c = defaultClassLoader.loadClass("javabasic.reflect.Robot");
         Class.forName("javabasic.reflect.Robot");
+        Thread.yield();
     }
 }
