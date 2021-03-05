@@ -9,7 +9,9 @@ import java.util.Date;
  * 2. 同步非静态方法
  * 3. 同步类(synchronized(类.class)
  * 4. 同步静态方法
+ * 分为两类：对象锁和类锁。本质上都是对象锁，类锁也是特殊的对象锁，锁class对象。
  * 同步类作用在class对象上，同步对象作用在对象上，这是两种不同的锁，两者之间互相不影响 。
+ * 要先获取到这个互斥的锁，才能进入被锁修饰的代码块。
  */
 public class SyncDemo implements Runnable {
     @Override
