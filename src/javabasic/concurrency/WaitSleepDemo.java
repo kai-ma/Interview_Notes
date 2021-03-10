@@ -50,7 +50,7 @@ public class WaitSleepDemo {
     }
 
     /**
-     * 验证wait会释放锁。
+     * 验证sleep不会释放锁。
      * A先执行，进入到synchronized代码块，获取到锁。B后执行，阻塞。
      * 此时A调用Thread.sleep(1000)，睡眠1s，不会释放锁。
      * 等到A执行完任务，B才会获取到锁并执行任务。
