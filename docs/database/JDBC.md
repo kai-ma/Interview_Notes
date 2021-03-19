@@ -28,7 +28,7 @@ JDBC即Java DataBase Connectivity，java数据库连接；JDBC为多种关系数
 
 **导入数据库驱动**
 
-导入MySQL的驱动（用什么数据库导入什么数据库驱动即可），`Project Structure-modules-dependencise-jar or directories`导入`mysql-connector-java-5.1.49-bin.jar`。
+导入MySQL的驱动（用什么数据库导入什么数据库驱动即可），`Project Structure-modules-dependencise-jar or directories`导入`mysql-connector-java-8.0.11-bin.jar`。
 
 或者`Project Structure-Libraries-+-Java-选择要导入的jar包`
 

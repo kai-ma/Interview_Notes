@@ -1,6 +1,10 @@
 ![MyBatis logo](images/MyBatis/mybatis-logo.png)
 
-[javaguide](D:\计算机\笔记\JavaGuide\docs\system-design\framework\mybatis\mybatis-interview.md)
+[MyBatis中文教程](https://mybatis.org/mybatis-3/zh/index.html)
+
+[参考资料](D:\计算机\笔记\JavaGuide\docs\system-design\framework\mybatis\mybatis-interview.md)
+
+[Github地址](https://github.com/mybatis/mybatis-3)
 
 ### 1. 什么是MyBatis？
 
