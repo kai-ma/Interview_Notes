@@ -1,6 +1,6 @@
 
 
-## Java 面向对象
+# Java 面向对象
 
 ### 谈谈对面向过程编程、面向对象编程还有面向切面编程的理解？
 
@@ -74,7 +74,7 @@
 
 
 
-## 未归类
+# 未归类
 
 ### java权限控制
 
@@ -108,6 +108,8 @@ public class Test3 extends MyObject3 {
     }
 }
 ```
+
+Class类的构造方法是private，只有JVM能创建Class实例，我们自己的Java程序是无法创建Class实例的。
 
 
 
@@ -271,7 +273,79 @@ ii. 而泛型方法中的泛型参数对象是可修改的，因为类型参数T
 
 
 
-## 集合 Collection
+## 逃逸
+
+### this引用逃逸
+
+todo：https://www.cnblogs.com/jian0110/p/9369096.html 
+
+**多线程的this逃逸：构造方法中直接new了一个class的对象。**this逃逸是指当一个对象还没有完成构造（构造方法尚未返回）的时候，其他线程就已经可以获得到该对象的引用，并可以通过该引用操作该对象
+
+解决办法：不要在对象的构造方法中使用this引用逃逸。要将启动线程的动作延迟到构造方法完成之后。
+
+```java
+if (uniqueInstance == null) {
+   synchronized (Singleton.class) {
+       uniqueInstance = new Singleton();
+  }
+}
+```
+
+uniqueInstance 采用 volatile 关键字修饰，防止this逃逸。 uniqueInstance = new Singleton(); 这段代码其实是分为三步执行：
+
+1. **为 uniqueInstance 分配内存空间**
+2. **初始化 uniqueInstance**
+3. **将 uniqueInstance** **指向分配的内存地址**
+
+但是由于 JVM 具有指令重排的特性，执行顺序有可能变成 1>3>2。指令重排在单线程环境下不会出现问题，但是在**多线程环境下会导致一个线程获得还没有初始化的实例。**例如，线程 T1 执行了 1 和 3，此时 T2 调用 getUniqueInstance() 后发现 uniqueInstance 不为空，因此返回 uniqueInstance，但此时 uniqueInstance 还未被初始化。
+
+使用 volatile 可以禁止 JVM 的指令重排，保证在多线程环境下也能正常运行。
+
+
+
+
+
+# 常用类
+
+### Object
+
+**Object类中常见的方法**
+
+**Object() ：默认构造方法** 
+
+**getClass() ：返回一个对象的运行时类。 用于反射**
+
+**toString()：**输出一个对象的地址字符串（哈希code码）；可以通过重写toString方法，获取对象的属性！ 
+
+**equals()：**比较的是对象的引用是否指向同一块内存地址， 重写equals()方法比较两个对象的内容是否相同 
+
+**hashCode() ：**返回该对象的哈希码值。
+
+**clone() ：创建并返回此对象的一个副本。** 
+
+**finalize() ：**当垃圾回收器确定不存在对该对象的更多引用时，由对象的垃圾回收器调用此方法。 
+
+**notify() ：**唤醒在此对象监视器上等待的单个线程。 
+
+**notifyAll() :** 唤醒在此对象监视器上等待的所有线程。 
+
+**wait() :** 导致当前的线程等待，直到其他线程调用此对象的 notify() 方法或 notifyAll() 方法。 
+
+**wait(long timeout) :** 导致当前的线程等待，直到其他线程调用此对象的 notify() 方法或 notifyAll() 方法，或者超过指定的时间量。 
+
+**wait(long timeout, int nanos) :** 导致当前的线程等待，直到其他线程调用此对象的 notify() 方法或 notifyAll() 方法，或者其他某个线程中断当前线程，或者已超过某个实际时间量。
+
+**为什么wait notify会放在Object里边？wait(),notify(),notifyAll()用来操作线程为什么定义在Object类中？** 
+
+1、这些方法存在于同步中；
+
+2、使用这些方法必须标识同步所属的锁；
+
+3、**锁可以是任意对象，所以任意对象调用方法一定定义在Object类中。**
+
+
+
+## Collection
 
 ​        Collection是一个接口，它主要的两个分支是：List 和 Set。
 
@@ -285,8 +359,327 @@ ii. 而泛型方法中的泛型参数对象是可修改的，因为类型参数T
 
 
 
-## 反射
+## Map
+
+> Map不属于Collection，但也是Java最常用的类之一，也放到这一部分。
+
+[HashMap](https://blog.csdn.net/woshimaxiao1/article/details/83661464)
+
+[HashMap底层实现原理](https://blog.csdn.net/tuke_tuke/article/details/51588156)
+
+### HashMap死循环问题
+
+hashmap线程不安全，在扩容的时候会导致死循环 https://www.jianshu.com/p/1e9cf0ac07f4
 
 
 
-## I/O
+### Put过程
+
+![HashMap.put方法](images/java基础/20181105181728652.png)
+
+当两个不同的键对象的hashcode相同时，它们会储存在同一个bucket位置的链表中。键对象的equals()方法用来找到键值对。
+
+put添加的元素Entry就是数组中的元素，每个Map.Entry其实就是一个key-value对，它持有一个指向下一个元素的引用，这就构成了链表。
+
+**创建HashMap对象默认情况下，数组大小为16。**
+
+开始扩容的大小=原来的数组大小*loadFactor   16*0.75=12 超过12个元素，进行扩容
+
+扩容是一个非常消耗性能的操作，所以如果我们已经预知HashMap中元素的个数，那么预设元素的个数能够有效的提高HashMap的性能
+
+扩容后大小是原来的2倍，其中加载因子loadFactor的默认值为0.75，这个参数可以再创建对象时在构造方法中指定。
+
+**转换为红黑树的条件：链表的长度达到8个或数组的长度达到64个**
+
+
+
+### 计算插入数组索引
+
+```java
+static final int hash(Object key) {
+    int h;
+    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);//key如果是null 新hashcode是0 否则 计算新的hashcode
+}
+
+//计算数组槽位
+(n - 1) & hash
+```
+
+首先获取到key的hashcode，与右移16异或，然后对长度进行取模。**return h & (length-1);**  **长度16，和len - 1 ：00001111做且运算**
+
+**为什么要右移16位？**
+
+**用key的hashCode和它本身的右移16位进行XOR运算，相当于二次hash，避免hashcode算法不好产生的不均匀。**
+
+算下标的时候只有hash的低16位参与了运算，所以hashCode得到的int值把高16位和低16位进行了一个异或，等于说计算下标时把hash的高16位也参与进来了，减少了hash碰撞。
+
+
+
+**其他哈希解决冲突方法**
+
+**开放地址法（找到下一个为空的）  再hash法    公共溢出区方法（所有冲突的都放到溢出区）**
+
+
+
+## 排序实现
+
+**Java排序的实现**
+
+**以前是这样的：**
+
+<img src="images/java基础/clipboard.png" alt="img" style="zoom:67%;" />
+
+基本上排序好了，用归并排序  很乱，用快速排序
+
+看源码好像只有Dual-Pivot Quicksort
+
+
+
+## String
+
+**Java8的StringBuffer是不是也用了Synchronized Java8的新特性**
+
+https://www.jianshu.com/p/64519f1b1137
+
+### String、StringBuilder、StringBuffer区别 还要总结精炼
+
+String 类不可变，**内部维护的char[] 数组长度不可变，为final修饰**，String类也是final修饰，不存在扩容。字符串拼接，截取，都会生成一个新的对象。频繁操作字符串效率低下，因为每次都会生成新的对象。
+
+**StringBuilder、StringBuffer的方法都会调用AbstractStringBuilder中的公共方法**，如super.append(...)。只是StringBuffer会在方法上加synchronized关键字，进行同步。
+
+StringBuilder 类内部维护可变长度char[] ， 初始化数组容量为16，存在扩容， **其append拼接字符串方法内部调用System的native方法，进行数组的拷贝，不会重新生成新的StringBuilder对象。**非线程安全的字符串操作类， 其每次调用 toString方法而重新生成的String对象，不会共享StringBuilder对象内部的char[]，会进行一次char[]的copy操作。
+
+StringBuffer 类内部维护可变长度char[]， 基本上与StringBuilder一致，但其为线程安全的字符串操作类，**大部分方法都采用了Synchronized关键字修改**，以此来实现在多线程下的操作字符串的安全性。其toString方法而重新生成的String对象，会共享StringBuffer对象中的toStringCache属性（char[]），但是每次的StringBuffer对象修改，都会置null该属性值。
+
+
+
+
+
+# 反射
+
+JAVA反射机制是在运行状态中，**对于任意一个类，在JVM第一次读到一种class时，会创建一个对应的Class实例，实例中保存了该class的所有信息——可以知道这个类的所有属性和方法；能通过Class对象，来调用它的任意方法和属性。**这种**动态**获取信息以及动态调用对象方法的功能称为java语言的反射机制。
+
+> 获取构造方法，创建对象-newInstance()，获取修改字段-field.set，调用方法method.invoke，无论是否私有。
+
+**注意：**
+
+- **调用私有方法/修改私有属性/调用私有属性/获取私有constructor：setAccessible(true)**
+- 除了int等基本类型外，Java的其他类型全部都是class。**class是由JVM在执行过程中动态加载的，**JVM在第一次读取到一种class类型时，将其加载进内存。——类加载
+- **每加载一种class，JVM就为其创建一个Class类型的实例，并关联起来。**JVM为每个加载的class及interface创建了对应的Class实例来保存class及interface的所有信息；一旦类被加载到JVM中，同一个类将不会被再次载入。被载入JVM的类都有一个**唯一标识就是该类的全名+类加载器名，即包括包名和类名。**
+- **JVM总是动态加载class，可以在运行期根据条件来控制加载class。**
+
+
+
+以String类为例，当JVM加载String类时，它首先读取String.class文件到内存，然后，为String类创建一个Class实例并关联起来：Class cls = new Class(String);
+
+这个Class实例是JVM内部创建的，Class类的构造方法是private，只有JVM能创建Class实例，我们自己的Java程序是无法创建Class实例的。
+
+所以，JVM持有的每个Class实例都指向一个数据类型（class或interface）。实例中保存了该class的所有信息，包括类名、包名、父类、实现的接口、所有构造方法、方法、字段等，因此，如果获取了某个Class实例，我们就可以通过这个Class实例获取到该实例对应的class的所有信息，可以通过Class实例创建对象，调用方法，修改字段。
+
+
+
+**如果使用反射可以获取并修改private字段的值，那么类的封装还有什么意义？**
+
+正常情况下，我们总是通过p.name来访问Person的name字段，编译器会根据public、protected和private决定是否允许访问字段，这样就达到了数据封装的目的。
+
+**而反射是一种非常规的用法**，使用反射，首先代码非常繁琐，其次，它**更多地是给工具或者底层框架来使用，目的是在不知道目标实例任何信息的情况下，获取特定字段的值。**
+
+
+
+**反射机制的相关类**
+
+| 类名          | 用途                                             |
+| ------------- | ------------------------------------------------ |
+| Class类       | 代表类的实体，在运行的Java应用程序中表示类和接口 |
+| Field类       | 代表类的成员变量（成员变量也称为类的属性）       |
+| Method类      | 代表类的方法                                     |
+| Constructor类 | 代表类的构造方法                                 |
+
+
+
+**反射举例**
+
+```java
+package com.interview.javabasic.reflect;
+
+public class Robot {
+    private String name;
+    public void sayHi(String helloSentence){
+        System.out.println(helloSentence + " " + name);
+    }
+    private String throwHello(String tag){
+        return "Hello " + tag;
+    }
+}
+```
+
+通过反射获取Robot类中的私有属性，私有方法：
+
+```java
+package com.interview.javabasic.reflect;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+public class ReflectSample {
+    public static void main(String[] args) throws ClassNotFoundException, 
+    IllegalAccessException, InstantiationException, InvocationTargetException, 
+    NoSuchMethodException, NoSuchFieldException {
+         //全名
+        Class rc = Class.forName("com.interview.javabasic.reflect.Robot");
+        //根据robot的Class对象，创建robot实例，需要强制转换
+        Robot r = (Robot) rc.newInstance();
+        //Java9 之后上面的创建方法废弃了：
+        //Robot r = (Robot) rc.getDeclaredConstructor().newInstance();
+        System.out.println("Class name is " + rc.getName());
+        //获取方法对象，参数是方法名，方法参数列表对象（方法名+参数列表确定方法）
+        Method getHello = rc.getDeclaredMethod("throwHello", String.class);
+        //设置这个方法可见
+        getHello.setAccessible(true);
+        //调用方法 第一个参数是调用方法的对象，后面是参数对象
+        Object str = getHello.invoke(r, "Bob");
+        System.out.println("getHello result is " + str);
+        Method sayHi = rc.getMethod("sayHi", String.class);
+        sayHi.invoke(r, "Welcome");
+        //获取字段
+        Field name = rc.getDeclaredField("name");
+        name.setAccessible(true);
+        //修改指定对象的这个字段
+        name.set(r, "Alice");
+        sayHi.invoke(r, "Welcome");
+    }
+}
+```
+
+
+
+### Class
+
+**三种获取Class对象的方法**
+
+- **通过静态变量获取**
+
+- **通过实例变量获取**
+
+- **通过完整类名(包名+类名)获取**
+
+```java
+Class cls = String.class;
+String s = "Hello";    Class cls = s.getClass();
+Class cls = Class.forName("java.lang.String");
+```
+
+**Class实例在JVM中是唯一的，因此这三种方法获取到的Class都是相同的。**
+
+```java
+返回与给定字符串名称的类或接口相关联的类对象。 
+public static Class<?> forName(String className) 
+    throws ClassNotFoundException
+
+创建实例：返回类型是泛型，需要强制转换  比如：Robot r = (Robot) rc.newInstance();
+public T newInstance() throws ...
+
+当我们判断一个实例是否是某个类型时，使用instanceof操作符，返回boolean
+Java9 之后上面的创建方法废弃了，推荐使用：
+clazz.getDeclaredConstructor().newInstance();
+
+
+返回类的类加载器：            
+public ClassLoader getClassLoader()  
+
+返回由类对象表示的实体的名称（类，接口，数组类，原始类型或void），作为String 。即，完整类名：
+public String getName()                                            
+
+获取继承关系：
+public Class<? super T> getSuperclass()
+public Class<?>[] getInterfaces()
+
+```
+
+```java
+获取构造方法，字段，方法  
+可以获取当前+父类的public的
+getConstructor getMethod  getField  
+    
+中间+Declared，包括当前类private的  
+getDeclaredConstructor(Class<?>... parameterTypes);
+    
+getDeclaredField(String name);
+    
+getDeclaredMethod(String name, Class<?>... parameterTypes);
+    
++s获取所有  例：Method[] getMethods()   Method[] getDeclaedMethods()
+```
+
+
+
+getDeclaredMethod之后，需要先设置私有方法的访问检查：
+
+[Field](https://docs.oracle.com/javase/8/docs/api/java/lang/reflect/Field.html), [Method](https://docs.oracle.com/javase/8/docs/api/java/lang/reflect/Method.html), [Constructor](https://docs.oracle.com/javase/8/docs/api/java/lang/reflect/Constructor.html)通用：extends java.lang.reflect.AccessibleObject
+
+<img src="images/java基础/method.png" alt="img" style="zoom:67%;" />
+
+设置私有字段、方法、构造方法。 true的值表示反射对象应该在使用时抑制Java语言访问检查。
+
+```java
+public void setAccessible(boolean flag) throws SecurityException
+```
+
+
+
+### Field
+
+**java.lang.reflect.Field;**
+
+**封装了字段的所有信息**
+
+```java
+获取字段的名称，类型，修饰符
+getName()：返回字段名称
+getType()：返回字段类型 
+getModifiers()：返回字段的修饰符，它是一个int，不同的bit表示不同的含义。
+
+
+获取和修改实例的特定字段值，包括private的
+获取指定对象的指定字段的值
+private字段要先设置：fieldTag.setAccessible(true);  有可能被JVM阻止
+public Object get(Object obj) throws ...
+
+修改某个对象的这个field的值
+public void set(Object obj, Object value) throws ...
+```
+
+
+
+### Method 
+
+返回方法名，字段，返回类型，参数类型
+
+```java
+调用方法，第一个参数是调用这个方法的对象，后面的参数是方法的参数对象。
+public Object invoke(Object obj, Object... args) throws ...
+```
+
+通过反射调用方法时，仍然遵循多态原则。
+
+
+
+### Constructor
+
+```java
+public T newInstance(Object... initargs) throws ...
+public T newInstance(Object... parameters);
+```
+
+
+
+**反射为何耗性能？ todo**
+
+运行时注解的信息可以在运行时通过反射机制获取
+
+由于反射涉及动态地解析类型，**无法执行 Java 虚拟机的某些优化措施**（比如 JIT？公共子表达式消除？数组范围检查消除？方法内联？逃逸分析？），因此性能低于非反射操作。如果是依赖注入，生成新的类时，还需要执行一遍类的加载过程（加载、验证、准备、解析、初始化）。
+
+
+
+# I/O
