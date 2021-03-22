@@ -1,3 +1,57 @@
+# Java关键字
+
+| 访问控制             | private  | protected  | public   |              |            |           |        |
+| -------------------- | -------- | ---------- | -------- | ------------ | ---------- | --------- | ------ |
+| 类，方法和变量修饰符 | abstract | class      | extends  | final        | implements | interface | native |
+|                      | new      | static     | strictfp | synchronized | transient  | volatile  |        |
+| 程序控制             | break    | continue   | return   | do           | while      | if        | else   |
+|                      | for      | instanceof | switch   | case         | default    |           |        |
+| 错误处理             | try      | catch      | throw    | throws       | finally    |           |        |
+| 包相关               | import   | package    |          |              |            |           |        |
+| 基本类型             | boolean  | byte       | char     | double       | float      | int       | long   |
+|                      | short    | null       | true     | false        |            |           |        |
+| 变量引用             | super    | this       | void     |              |            |           |        |
+| 保留字               | goto     | const      |          |              |            |           |        |
+
+
+
+## 访问权限控制
+
+| 修饰词     | 同一个包的类 | 继承类 | 其他类 |
+| ---------- | ------------ | ------ | ------ |
+| private    | ×            | ×      | ×      |
+| 无（默认） | √            | ×      | ×      |
+| protected  | √            | √      | ×      |
+| public     | √            | √      | √      |
+
+[注意protected](https://blog.51cto.com/zhangjunhd/19287 )
+
+1. 父类的protected成员是包内可见的，并且对子类可见；
+2. 若子类与父类不在同一包中，那么在子类中，子类实例可以访问其从父类继承而来的protected方法，而不能访问父类实例的protected方法。
+
+```java
+package 1
+class MyObject3 {
+protected Object clone() throws CloneNotSupportedException {
+       return super.clone();
+    }
+}
+ 
+package 2
+public class Test3 extends MyObject3 {
+    public static void main(String args[]) {
+       MyObject3 obj = new MyObject3();
+       obj.clone(); // Compile error.  不能通过父类访问
+       Test3 tobj = new Test3();
+       tobj.clone();// Complie OK.  可以继承
+    }
+}
+```
+
+Class类的构造方法是private，只有JVM能创建Class实例，我们自己的Java程序是无法创建Class实例的。
+
+
+
 ## final
 
 final关键字主要用在三个地方：变量、方法、类。
