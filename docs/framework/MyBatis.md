@@ -46,3 +46,5 @@ MyBatis框架适用场合：
 
 
 ### 3. MyBatis和Hibernate区别
+
+Hibernate是全自动化ORM框架，Mybatis是半自动化ORM框架，Mybatis的可定制性更高，更灵活，所以用Mybatis的人更多。
