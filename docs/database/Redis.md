@@ -202,7 +202,7 @@ io-threads 4 #官网建议4核的机器建议设置为2或3个线程，8核的�
 
 ## Redis过期
 
-### Redis 给缓存数据设置过期时间有啥用？
+### Redis 给缓存数据设置过期时间有什么用？
 
 #### 1.缓解内存消耗
 
@@ -268,6 +268,12 @@ typedef struct redisDb {
 
 
 
+**如果集中过期，由于清除大量的key很耗时，会出现短暂的卡顿现象。**
+
+解决方法：在设置key的过期时间的时候，给每个key加上随机值。
+
+
+
 ## Redis内存淘汰机制
 
 ### Redis 内存淘汰机制了解么
@@ -301,6 +307,8 @@ MySQL 里有 2000w 数据，Redis 中只存 20w 的数据，如何保证 Redis �
 # Redis数据结构
 
 ## 基础命令
+
+[通俗易懂的Redis数据结构基础教程](https://juejin.cn/post/6844903644798664712)
 
 可以自己本机安装 redis 或者通过 redis 官网提供的[在线 redis 环境](https://try.redis.io/)。
 
@@ -522,11 +530,346 @@ string 数据结构是简单的 key-value 类型。虽然 Redis 是用 C 语言�
 
 hash 类似于 JDK1.8 前的 HashMap，内部实现也差不多(数组 + 链表)。不过，Redis 的 hash 做了更多优化。
 
+# Redis 持久化机制
+
+> 很多时候我们需要持久化数据也就是将内存中的数据写入到硬盘里面，大部分原因是为了之后重用数据（比如重启机器、机器故障之后恢复数据），或者是为了防止系统故障而将数据备份到一个远程位置。
+
+https://www.cnblogs.com/wdliu/p/9377278.html
+
+Redis不同于Memcached的很重要一点就是，Redis支持持久化，而且支持两种不同的持久化操作。**一种持久化方式叫快照（snapshotting，RDB(Redis DataBase)），另一种方式是只追加文件（append-only file,AOF）**。
+
+**RBD——基于快照方式的持久化  主从复制也是使用rbd的快照**
+
+​	**在某时刻把所有数据进行完整备份**
+
+**AOF——基于写日志方式的持久化**
+
+​	把用户执行的所有**写指令（增删改）备份到文件**中，还原数据时只需要把备份的所有指令重新执行一遍**。**
+
+
+
+**RBD vs AOD**
+
+- AOF文件比RDB更新频率高，优先使用AOF还原数据
+- AOF比RDB更安全也更大
+- RDB性能比AOF好,RDB 恢复数据集的速度也要比AOF恢复的速度要快
+- 如果两个都配了优先加载AOF
+
+
+
+## RDB 快照（snapshotting）持久化
+
+>  **多长时间以后，至少有多少个key发生变化，自动触发BGSAVE持久化。**
+
+RDB是Redis默认的持久化方式。**保存某个时间点的全量数据快照**，对应产生的数据文件为./src/dump.rdb(二进制文件)。
+
+Redis创建快照之后，可以对快照进行备份，可以将快照复制到其他服务器从而**创建具有相同数据的服务器副本**（Redis主从结构，主要用来提高Redis性能），还可以将快照留在原地以便重启服务器的时候使用。
+
+
+
+### 什么时候会触发RBD快照持久化
+
+**BGSAVE命令：**BG即Backgroud-后台。后台方式进行持久化，客户端调用此命令会立即返回OK，主进程会立刻恢复对客户端的服务。Redis主进程会调用fork来创建一个子进程，然后子进程负责将快照写入硬盘，而父进程则继续处理命令请求，不阻塞服务器进程。
+
+**SAVE命令：** 客户端还可以向Redis发送 **SAVE命令** 来创建一个快照，接到SAVE命令的Redis服务器在快照创建完毕之前不会再响应任何其他命令。SAVE命令不常用，我们通常只会在没有足够内存去执行BGSAVE命令的情况下，又或者即使等待持久化操作执行完毕也无所谓的情况下，才会使用这个命令。
+
+客户端用`lastsave`命令可以获取上一次成功执行`SAVE`或`BGSAVE`的时间。
+
+```sh
+>save
+OK
+(18.31S)
+>bgsave
+Background saving started   #立即返回
+```
+
+可以java计时器定时调用BGSAVE指令，定期备份RDB文件，根据时间戳按时间存放dump.rdb文件。
+
+**save选项：**根据redis.conf配置里面的SAVE m n 定时触发(用的是BGSAVE)。
+
+```shell
+#平衡性能与数据安全
+#在900秒(15分钟)之后，如果至少有1个key发生变化，Redis就会自动触发`BGSAVE`命令创建快照。
+save 900 1      
+
+#在300秒(5分钟)之后，如果至少有10个key发生变化，Redis就会自动触发BGSAVE命令创建快照。
+save 300 10     
+
+#在60秒(1分钟)之后，如果至少有10000个key发生变化，Redis就会自动触发BGSAVE命令创建快照。
+save 60 10000   
+#加上这一句会禁用RBD配置
+save "" 
+
+
+#当备份进程出错的时候，主进程停止接受新的写入操作——保护持久化数据的一致性 
+#如果有完善的监控系统，可以设置no，否则请开启
+stop-writes-on-bgsave-error yes
+
+#在备份的时候，压缩rdb文件之后，才做保存。
+#建议设置为no redis本身就是cpu密集型服务器，如果开启压缩，会带来更多的CPU消耗 相比硬盘成本，CPU更值钱
+rdbcompression yes
+```
+
+**一个Redis服务器连接到另一个Redis服务器：** 当一个Redis服务器连接到另一个Redis服务器，并向对方发送SYNC命令来开始一次复制操作的时候，如果主服务器目前没有执行BGSAVE操作，或者主服务器并非刚刚执行完BGSAVE操作，那么主服务器就会执行BGSAVE命令。  **最典型的是：主从复制时，主节点会自动触发**
+
+**执行Debug Reload时**
+
+**SHUTDOWN命令：**  当Redis通过SHUTDOWN命令接收到关闭服务器的请求时，或者接收到标准TERM信号时，如果没有开启AOF持久化，会执行一个SAVE命令，阻塞所有客户端，不再执行客户端发送的任何命令，并在SAVE命令执行完毕之后关闭服务器。
+
+
+
+#### BGSAVE原理
+
+> fork() + copyonwrite
+
+**fork**
+
+fork()的实际开销就是复制父进程的页表以及给子进程创建一个进程描述符，所以速度一般比较快。
+
+fork()出来的子进程共享其父类的内存数据。仅仅是共享fork()出子进程的那一刻的内存数据——**快照**，后期主进程修改数据对子进程不可见。子进程出现问题，不影响父进程，父进程出现问题，子进程也会挂掉。
+
+**copyonwrite**
+
+主进程fork()子进程之后，内核把主进程中所有的内存页的权限都设为read-only，然后子进程的地址空间指向主进程，这也就是共享了主进程的内存。当其中某个进程写内存时，CPU硬件检测到内存页是read-only的，于是触发页异常中断（page-fault），陷入内核的一个中断例程。中断例程中，**内核就会把触发的异常的页复制一份**，于是主子进程各自持有独立的一份，其余的页还是共享主进程的。
+
+也就是说：**直到主进程修改共享资源时，系统才会真正复制一份给主进程，而子进程所见到的快照不变。**这样不需要复制内存，实现了并发的读，节省了很多性能和资源的消耗。
+
+
+
+#### RBD的优缺点分析
+
+**优点：**全量数据快照，文件小，恢复快。
+
+1. RDB 是一个非常紧凑的文件，它保存了 Redis 在某个时间点上的数据集。 这种文件**非常适合用于进行备份——主从复制**： 比如说，你可以在最近的 24 小时内，每小时备份一次 RDB 文件，并且在每个月的每一天，也备份一个 RDB 文件。 这样的话，即使遇上问题，也可以随时将数据集还原到不同的版本。
+2. RDB 非常适用于灾难恢复：它只有一个文件，并且内容都非常紧凑，可以（在加密后）将它传送到别的数据中心。
+3. RDB 在恢复大数据集时的速度比 AOF 的恢复速度要快。
+
+**缺点：**
+
+1. **数据安全性低。**RDB 是间隔一段时间进行持久化，如果持久化之间 redis 发生故障，会发生数据丢失。所以这种方式更适合数据要求不严谨的时候。
+
+
+
+## AOF append-only file
+
+与快照持久化相比，AOF持久化的**实时性更好**，因此已成为主流的持久化方案。当两种方式同时开启时，数据恢复Redis会优先选择AOF恢复。
+
+默认情况下Redis没有开启AOF（append only file）方式的持久化，可以通过appendonly参数开启：
+
+```sh
+appendonly no #改为yes即可开启
+```
+
+在Redis的配置文件redis.conf中存在三种同步方式，它们分别是：
+
+```sh
+#appendfsync always     
+appendfsync everysec    
+#appendfsync no       
+```
+
+always:命令写入aof_buf后调用系统fsync操作同步到AOF文件，fsync完成后线程返回。配置为always时，每次写入都要同步AOF文件，这样会严重降低Redis的速度。在一般的SATA硬盘上，Redis只能支持大约几百TPS写入，显然跟Redis高性能特性背道而驰，不建议配置。
+
+everysec:命令写入aof_buf后调用系统write操作，write完成后线程返回。fsync同步文件操作由专门线程每秒调用一次。 配置为everysec，**是建议的同步策略，也是默认配置，做到兼顾性能和数据安全性。理论上只有在系统突然宕机的情况下丢失1秒的数据。**
+
+no:让操作系统决定何时进行同步 不推荐，一般为了提高效率，操作系统会等待缓存区填满才会同步数据到磁盘中。由于操作系统每次同步AOF文件的周期不可控，而且会加大每次同步硬盘的数据量，虽然提升了性能，但数据安全性无法保证。
+
+### AOF过程
+
+AOF持久化会把除查询以外的所有指令都以append的方式追加到AOF文件中。
+
+1）所有的写入命令会追加到aof_buf缓冲区中。
+
+2）AOF缓冲区根据对应的策略向硬盘做同步操作。
+
+3）随着AOF文件越来越大，需要定期对AOF文件进行重写，达到压缩的目的。（用到了AOF_rewrite_buf）
+
+4）当Redis服务器重启时，可以加载AOF文件进行数据恢复。
+
+### AOF重写
+
+>  AOF 重写是一个有歧义的名字，**该功能是通过读取数据库中的键值对来实现的**，程序无须对现有 AOF 文件进行任何读入、分析或者写入操作。
+
+AOF日志文件是纯追加的文件，随着写操作的增加，AOF文件会越来越大，极端的情况下，体积不断增大的AOF文件很可能会用完硬盘空间。另外，如果AOF体积过大，那么还原操作执行时间就可能会非常长。例如递增一个计数器1000次，其实只需要保留最终的结果1000即可，但是AOF文件会把这1000次记录完整记录下来。因此Redis支持日志重写，在不中断服务的情况下在后台重建AOF文件。
+
+重写AOF并不需要读取旧的AOF文件进行命令分析或合并，直接去内存中读取当前Redis数据库中的数据即可，记录所有没有过期的数据，生成添加这些数据的记录。
+
+重写过程：
+
+- 调用fork()，创建一个子进程。启用AOF重写缓存 `AOF_rewrite_buf`
+- 子进程把新的AOF写到一个临时文件里，写命令的过程不依赖于原来的AOF文件
+- **主进程持续将新的变动命令同时写到AOF 重写缓存**和原来的AOF里
+  - 这样一来可以保证：
+    1. 现有的 AOF 功能会继续执行，即使在 AOF 重写期间发生停机，也不会有任何数据丢失。
+    2. 所有对数据库进行修改的命令都会被记录到 AOF 重写缓存中。
+- 主进程获取子进程重写AOF完成的信号，然后往新的AOF同步AOF重写缓存中的增量变动
+- 使用新的AOF文件替换掉旧的AOF文件
+
+
+
+**AOF 重写可以由用户通过调用 `BGREWRITEAOF` 手动触发。**
+每次当 `serverCron` 函数执行时， 它都会检查以下条件是否全部满足， 如果是的话， 就会触发自动的 AOF 重写：
+
+- 没有 BGSAVE 命令在进行。
+- 没有 BGREWRITEAOF 在进行。
+- 当前 AOF 文件大小 `aof_current_size` 大于 `server.aof_rewrite_min_size` （默认值为 1 MB）。
+- 当前 AOF 文件大小和最后一次 AOF重写后的大小 `aof_rewrite_base_size` 之间的比率大于等于指定的增长百分比 `aof_rewrite_perc` 。
+  - 默认情况下， 增长百分比为 100% ， 也即是说， 如果前面三个条件都已经满足， 并且当前 AOF 文件大小比最后一次 AOF 重写时的大小要大一倍的话， 那么触发自动 AOF 重写。
+
+**自动执行BGREWRITEAOF命令**
+
+和快照持久化可以通过设置save选项来自动执行BGSAVE一样，AOF持久化也可以通过设置
+
+```
+auto-aof-rewrite-percentage
+```
+
+选项和
+
+```
+auto-aof-rewrite-min-size
+```
+
+选项自动执行BGREWRITEAOF命令。举例：假设用户对Redis设置了如下配置选项并且启用了AOF持久化。那么当AOF文件体积大于64mb，并且AOF的体积比上一次重写之后的体积大了至少一倍（100%）的时候，Redis将执行BGREWRITEAOF命令。
+
+```
+auto-aof-rewrite-percentage 100  
+auto-aof-rewrite-min-size 64mb
+```
+
+无论是AOF持久化还是快照持久化，将数据持久化到硬盘上都是非常有必要的，但除了进行持久化外，用户还必须对持久化得到的文件进行备份（最好是备份到不同的地方），这样才能尽量避免数据丢失事故发生。如果条件允许的话，最好能将快照文件和重新重写的AOF文件备份到不同的服务器上面。
+
+随着负载量的上升，或者数据的完整性变得 越来越重要时，用户可能需要使用到复制特性。
+
+
+
+AOF执行过程：伪代码（了解）
+
+```python
+def AOF_REWRITE(tmp_tile_name):
+
+  f = create(tmp_tile_name)
+
+  # 遍历所有数据库
+  for db in redisServer.db:
+
+    # 如果数据库为空，那么跳过这个数据库
+    if db.is_empty(): continue
+
+    # 写入 SELECT 命令，用于切换数据库
+    f.write_command("SELECT " + db.number)
+
+    # 遍历所有键
+    for key in db:
+
+      # 如果键带有过期时间，并且已经过期，那么跳过这个键
+      if key.have_expire_time() and key.is_expired(): continue
+
+      if key.type == String:
+
+        # 用 SET key value 命令来保存字符串键
+
+        value = get_value_from_string(key)
+
+        f.write_command("SET " + key + value)
+
+      elif key.type == List:
+
+        # 用 RPUSH key item1 item2 ... itemN 命令来保存列表键
+
+        item1, item2, ..., itemN = get_item_from_list(key)
+
+        f.write_command("RPUSH " + key + item1 + item2 + ... + itemN)
+
+      elif key.type == Set:
+
+        # 用 SADD key member1 member2 ... memberN 命令来保存集合键
+
+        member1, member2, ..., memberN = get_member_from_set(key)
+
+        f.write_command("SADD " + key + member1 + member2 + ... + memberN)
+
+      elif key.type == Hash:
+
+        # 用 HMSET key field1 value1 field2 value2 ... fieldN valueN 命令来保存哈希键
+
+        field1, value1, field2, value2, ..., fieldN, valueN =\
+        get_field_and_value_from_hash(key)
+
+        f.write_command("HMSET " + key + field1 + value1 + field2 + value2 +\
+                        ... + fieldN + valueN)
+
+      elif key.type == SortedSet:
+
+        # 用 ZADD key score1 member1 score2 member2 ... scoreN memberN
+        # 命令来保存有序集键
+
+        score1, member1, score2, member2, ..., scoreN, memberN = \
+        get_score_and_member_from_sorted_set(key)
+
+        f.write_command("ZADD " + key + score1 + member1 + score2 + member2 +\
+                        ... + scoreN + memberN)
+
+      else:
+
+        raise_type_error()
+
+      # 如果键带有过期时间，那么用 EXPIREAT key time 命令来保存键的过期时间
+      if key.have_expire_time():
+        f.write_command("EXPIREAT " + key + key.expire_time_in_unix_timestamp())
+
+    # 关闭文件
+    f.close()
+```
+
+### AOF优缺点分析
+
+**优点：**
+
+1. **数据安全**，aof 持久化可以配置 appendfsync 属性，有 always，每进行一次命令操作就记录到 aof 文件中一次。
+2. 通过 append 模式写文件，即使中途服务器宕机，可以通过 redis-check-aof 工具解决数据一致性问题。
+
+**缺点：**
+
+1. AOF 文件比 RDB 文件大，且恢复速度慢。
+
+2. 数据集大的时候，比 rdb 启动效率低。
+
+
+
+## Redis启动时的数据加载
+
+<img src="images/Redis/1327889-20190905133518438-1533339070.png" alt="Redis RDB和AOF的对比" style="zoom:50%;" />
+
+Redis启动数据加载流程：
+
+1. AOF持久化开启且存在AOF文件时，优先加载AOF文件。
+2. AOF关闭或者AOF文件不存在时，加载RDB文件。
+3. 加载AOF/RDB文件成功后，Redis启动成功。
+4. AOF/RDB文件存在错误时，Redis启动失败并打印错误信息。
+
+
+
+### RBD、AOF混合持久化方式 
+
+> 了解
+
+Redis 4.0 开始支持 RDB 和 AOF 的混合持久化（默认关闭，可以通过配置项 `aof-use-rdb-preamble` 开启，yes则表示开启，no表示禁用，默认是禁用的，可通过config set修改。）。
+
+如果把混合持久化打开，**AOF 重写的时候就直接把 RDB 的内容写到 AOF 文件开头。**这样做的好处是可以结合 RDB 和 AOF 的优点, 快速加载同时避免丢失过多的数据。当然缺点也是有的， AOF 里面的 RDB 部分是压缩格式不再是 AOF 格式，可读性较差。
+
+混合持久化同样也是通过`bgrewriteaof`完成的，不同的是当开启混合持久化时，fork出的子进程先将共享的内存副本全量的以RDB方式写入aof文件，然后在将重写缓冲区的增量命令以AOF方式写入到文件，写入完成后通知主进程更新统计信息，并将新的含有RDB格式和AOF格式的AOF文件替换旧的的AOF文件。简单的说：**新的AOF文件前半段是RDB格式的全量数据后半段是AOF格式的增量数据。**
+
+当我们开启了混合持久化时，启动redis依然优先加载aof文件，aof文件加载可能有两种情况如下：
+
+- aof文件开头是rdb的格式, 先加载 rdb内容再加载剩余的 aof。
+- aof文件开头不是rdb的格式，直接以aof格式加载整个文件。
+
 
 
 # Redis应用
 
-### 如何从海量数据中查询某一前缀的key
+## 如何从海量数据中查询某一前缀的key
 
 **面试中遇到数据问题，要摸清数据规模，即问清楚边界。**比如面试官可能问如何从redis中找出某类固定前缀的key。
 
@@ -570,7 +913,7 @@ keys的缺点，一次性返回所有匹配的key，数据量大的时候，会�
 
 
 
-### Redis做分布式锁
+## Redis做分布式锁
 
 对于秒杀，抢单这样的逻辑，是涉及到并发竞争资源的，需要做好线程的同步。
 
@@ -659,7 +1002,7 @@ set key value [ex seconds] [px milliseconds] [nx|xx]
 
 
 
-### 使用Redis做异步队列
+## 使用Redis做异步队列
 
 方法1：使用List作为队列，RPUSH生产消息，LPOP消费消息。
 
@@ -779,338 +1122,34 @@ Pipeline pipe = jedis.pipelined();//获取jedis对象的pipeline对象
 
 
 
-# Redis 持久化机制
+## Redis 事务
 
-> 很多时候我们需要持久化数据也就是将内存中的数据写入到硬盘里面，大部分原因是为了之后重用数据（比如重启机器、机器故障之后恢复数据），或者是为了防止系统故障而将数据备份到一个远程位置。
+可以将Redis中的事务理解为 ：**Redis事务提供了一种将多个命令请求打包的功能。然后，再按顺序执行打包的所有命令，并且不会被中途打断。**
 
-https://www.cnblogs.com/wdliu/p/9377278.html
+Redis 可以通过 **MULTI，EXEC，DISCARD 和 WATCH**  等命令来实现事务(transaction)功能。
 
-Redis不同于Memcached的很重要一点就是，Redis支持持久化，而且支持两种不同的持久化操作。**一种持久化方式叫快照（snapshotting，RDB(Redis DataBase)），另一种方式是只追加文件（append-only file,AOF）**。
-
-**RBD——基于快照方式的持久化  主从复制也是使用rbd的快照**
-
-​	**在某时刻把所有数据进行完整备份**
-
-**AOF——基于写日志方式的持久化**
-
-​	把用户执行的所有**写指令（增删改）备份到文件**中，还原数据时只需要把备份的所有指令重新执行一遍**。**
-
-
-
-**RBD vs AOD**
-
-- AOF文件比RDB更新频率高，优先使用AOF还原数据
-- AOF比RDB更安全也更大
-- RDB性能比AOF好,RDB 恢复数据集的速度也要比AOF恢复的速度要快
-- 如果两个都配了优先加载AOF
-
-
-
-### RDB 快照（snapshotting）持久化
-
->  **多长时间以后，至少有多少个key发生变化，自动触发BGSAVE持久化。**
-
-RDB是Redis默认的持久化方式。**保存某个时间点的全量数据快照**，对应产生的数据文件为./src/dump.rdb(二进制文件)。
-
-Redis创建快照之后，可以对快照进行备份，可以将快照复制到其他服务器从而**创建具有相同数据的服务器副本**（Redis主从结构，主要用来提高Redis性能），还可以将快照留在原地以便重启服务器的时候使用。
-
-
-
-#### RBD过程
-
-SAVE：接到SAVE命令的Redis服务器在快照创建完毕之前不会再响应任何其他命令。
-
-​	SAVE命令不常用，我们通常只会在没有足够内存去执行BGSAVE命令的情况下，才会使用这个命令。
-
-**BGSAVE**：BG即Backgroud，主进程Fork出一个子进程来创建RDB文件，不阻塞服务器进程。
-
-​	后台方式进行持久化，调用此命令会立即返回OK，主进程会立刻恢复对客户端的服务。
-
-客户端用`lastsave`命令可以获取上一次成功执行`SAVE`或`BGSAVE`的时间。
-
-```sh
->save
+``` bash
+> MULTI
 OK
-(18.31S)
->bgsave
-Background saving started   #立即返回
+> INCR foo
+QUEUED
+> INCR bar
+QUEUED
+> EXEC
+1) (integer) 1
+2) (integer) 1
 ```
 
-可以java计时器定时调用BGSAVE指令，定期备份RDB文件，根据时间戳按时间存放dump.rdb文件。
+使用 [MULTI](https://redis.io/commands/multi)命令后可以输入多个命令。Redis不会立即执行这些命令，而是将它们放到队列，当调用了[EXEC](https://redis.io/commands/exec)命令将执行所有命令。
 
-**自动触发RDB持久化的方式**
+**Redis 是不支持 roll back 的，因而不满足原子性的（而且不满足持久性）。**
 
-1、根据redis.conf配置里面的SAVE m n 定时触发(用的是BGSAVE)。
+- 若在事务队列中存在命令性错误（类似于java编译性错误），则执行EXEC命令时，所有命令都不会执行
+- 若在事务队列中存在语法性错误（类似于java的1/0的运行时异常），则执行EXEC命令时，其他正确命令会被执行，错误命令抛出异常。
 
-```shell
-#平衡性能与数据安全
-#在900秒(15分钟)之后，如果至少有1个key发生变化，Redis就会自动触发`BGSAVE`命令创建快照。
-save 900 1      
+Redis官网也解释了自己为啥不支持回滚。简单来说就是Redis开发者们觉得没必要支持回滚，这样更简单便捷并且性能更好。Redis开发者觉得即使命令执行错误也应该在开发过程中就被发现而不是生产过程中。
 
-#在300秒(5分钟)之后，如果至少有10个key发生变化，Redis就会自动触发BGSAVE命令创建快照。
-save 300 10     
-
-#在60秒(1分钟)之后，如果至少有10000个key发生变化，Redis就会自动触发BGSAVE命令创建快照。
-save 60 10000   
-#加上这一句会禁用RBD配置
-save "" 
-
-
-#当备份进程出错的时候，主进程停止接受新的写入操作——保护持久化数据的一致性 
-#如果有完善的监控系统，可以设置no，否则请开启
-stop-writes-on-bgsave-error yes
-
-#在备份的时候，压缩rdb文件之后，才做保存。
-#建议设置为no redis本身就是cpu密集型服务器，如果开启压缩，会带来更多的CPU消耗 相比硬盘成本，CPU更值钱
-rdbcompression yes
-```
-
-2、**主从复制时，主节点会自动触发**
-
-3、执行Debug Reload时
-
-4、执行Shutdown时，如果没有开启AOF持久化
-
-
-
-#### BGSAVE原理
-
-> fork() + copyonwrite
-
-**fork**
-
-fork()的实际开销就是复制父进程的页表以及给子进程创建一个进程描述符，所以速度一般比较快。
-
-fork()出来的子进程共享其父类的内存数据。仅仅是共享fork()出子进程的那一刻的内存数据——**快照**，后期主进程修改数据对子进程不可见。子进程出现问题，不影响父进程，父进程出现问题，子进程也会挂掉。
-
-**copyonwrite**
-
-主进程fork()子进程之后，内核把主进程中所有的内存页的权限都设为read-only，然后子进程的地址空间指向主进程，这也就是共享了主进程的内存。当其中某个进程写内存时，CPU硬件检测到内存页是read-only的，于是触发页异常中断（page-fault），陷入内核的一个中断例程。中断例程中，**内核就会把触发的异常的页复制一份**，于是主子进程各自持有独立的一份，其余的页还是共享主进程的。
-
-也就是说：**直到主进程修改共享资源时，系统才会真正复制一份给主进程，而子进程所见到的快照不变。**这样不需要复制内存，实现了并发的读，节省了很多性能和资源的消耗。
-
-
-
-#### RBD的优缺点分析
-
-**优点：**全量数据快照，文件小，恢复快。
-
-1. RDB 是一个非常紧凑的文件，它保存了 Redis 在某个时间点上的数据集。 这种文件**非常适合用于进行备份——主从复制**： 比如说，你可以在最近的 24 小时内，每小时备份一次 RDB 文件，并且在每个月的每一天，也备份一个 RDB 文件。 这样的话，即使遇上问题，也可以随时将数据集还原到不同的版本。
-2. RDB 非常适用于灾难恢复：它只有一个文件，并且内容都非常紧凑，可以（在加密后）将它传送到别的数据中心。
-3. RDB 在恢复大数据集时的速度比 AOF 的恢复速度要快。
-
-**缺点：**
-
-1. **数据安全性低。**RDB 是间隔一段时间进行持久化，如果持久化之间 redis 发生故障，会发生数据丢失。所以这种方式更适合数据要求不严谨的时候。
-
-
-
-### AOF
-
-与快照持久化相比，AOF持久化的**实时性更好**，因此已成为主流的持久化方案。当两种方式同时开启时，数据恢复Redis会优先选择AOF恢复。
-
-默认情况下Redis没有开启AOF（append only file）方式的持久化，可以通过appendonly参数开启：
-
-```sh
-appendonly no #改为yes即可开启
-```
-
-在Redis的配置文件redis.conf中存在三种同步方式，它们分别是：
-
-```sh
-#appendfsync always     
-appendfsync everysec    
-#appendfsync no       
-```
-
-always:命令写入aof_buf后调用系统fsync操作同步到AOF文件，fsync完成后线程返回。配置为always时，每次写入都要同步AOF文件，这样会严重降低Redis的速度。在一般的SATA硬盘上，Redis只能支持大约几百TPS写入，显然跟Redis高性能特性背道而驰，不建议配置。
-
-everysec:命令写入aof_buf后调用系统write操作，write完成后线程返回。fsync同步文件操作由专门线程每秒调用一次。 配置为everysec，**是建议的同步策略，也是默认配置，做到兼顾性能和数据安全性。理论上只有在系统突然宕机的情况下丢失1秒的数据。**
-
-no:让操作系统决定何时进行同步 不推荐，一般为了提高效率，操作系统会等待缓存区填满才会同步数据到磁盘中。由于操作系统每次同步AOF文件的周期不可控，而且会加大每次同步硬盘的数据量，虽然提升了性能，但数据安全性无法保证。
-
-#### AOF过程
-
-AOF持久化会把除查询以外的所有指令都以append的方式追加到AOF文件中。
-
-1）所有的写入命令会追加到aof_buf缓冲区中。
-
-2）AOF缓冲区根据对应的策略向硬盘做同步操作。
-
-3）随着AOF文件越来越大，需要定期对AOF文件进行重写，达到压缩的目的。（用到了AOF_rewrite_buf）
-
-4）当Redis服务器重启时，可以加载AOF文件进行数据恢复。
-
-#### AOF重写
-
-AOF 重写是一个有歧义的名字，**该功能是通过读取数据库中的键值对来实现的**，程序无须对现有 AOF 文件进行任何读入、分析或者写入操作。
-
-AOF日志文件是纯追加的文件，随着写操作的增加，AOF文件会越来越大。例如递增一个计数器1000次，其实只需要保留最终的结果1000即可，但是AOF文件会把这1000次记录完整记录下来。因此Redis支持日志重写，在不中断服务的情况下在后台重建AOF文件。
-
-重写AOF并不需要读取旧的AOF文件进行命令分析或合并，直接去内存中读取当前Redis数据库中的数据即可，记录所有没有过期的数据，生成添加这些数据的记录。
-
-重写过程：
-
-- 调用fork()，创建一个子进程。启用AOF重写缓存 `AOF_rewrite_buf`
-- 子进程把新的AOF写到一个临时文件里，写命令的过程不依赖于原来的AOF文件
-- **主进程持续将新的变动命令同时写到AOF 重写缓存**和原来的AOF里
-  - 这样一来可以保证：
-    1. 现有的 AOF 功能会继续执行，即使在 AOF 重写期间发生停机，也不会有任何数据丢失。
-    2. 所有对数据库进行修改的命令都会被记录到 AOF 重写缓存中。
-- 主进程获取子进程重写AOF完成的信号，然后往新的AOF同步AOF重写缓存中的增量变动
-- 使用新的AOF文件替换掉旧的AOF文件
-
-**AOF 重写可以由用户通过调用 `BGREWRITEAOF` 手动触发。**
-每次当 `serverCron` 函数执行时， 它都会检查以下条件是否全部满足， 如果是的话， 就会触发自动的 AOF 重写：
-
-- 没有 BGSAVE 命令在进行。
-- 没有 BGREWRITEAOF 在进行。
-- 当前 AOF 文件大小 `aof_current_size` 大于 server.aof_rewrite_min_size （默认值为 1 MB）。
-- 当前 AOF 文件大小和最后一次 AOF重写后的大小 `aof_rewrite_base_size` 之间的比率大于等于指定的增长百分比 `aof_rewrite_perc` 。
-  - 默认情况下， 增长百分比为 100% ， 也即是说， 如果前面三个条件都已经满足， 并且当前 AOF 文件大小比最后一次 AOF 重写时的大小要大一倍的话， 那么触发自动 AOF 重写。
-    
-
-AOF执行过程：伪代码（了解）
-
-```python
-def AOF_REWRITE(tmp_tile_name):
-
-  f = create(tmp_tile_name)
-
-  # 遍历所有数据库
-  for db in redisServer.db:
-
-    # 如果数据库为空，那么跳过这个数据库
-    if db.is_empty(): continue
-
-    # 写入 SELECT 命令，用于切换数据库
-    f.write_command("SELECT " + db.number)
-
-    # 遍历所有键
-    for key in db:
-
-      # 如果键带有过期时间，并且已经过期，那么跳过这个键
-      if key.have_expire_time() and key.is_expired(): continue
-
-      if key.type == String:
-
-        # 用 SET key value 命令来保存字符串键
-
-        value = get_value_from_string(key)
-
-        f.write_command("SET " + key + value)
-
-      elif key.type == List:
-
-        # 用 RPUSH key item1 item2 ... itemN 命令来保存列表键
-
-        item1, item2, ..., itemN = get_item_from_list(key)
-
-        f.write_command("RPUSH " + key + item1 + item2 + ... + itemN)
-
-      elif key.type == Set:
-
-        # 用 SADD key member1 member2 ... memberN 命令来保存集合键
-
-        member1, member2, ..., memberN = get_member_from_set(key)
-
-        f.write_command("SADD " + key + member1 + member2 + ... + memberN)
-
-      elif key.type == Hash:
-
-        # 用 HMSET key field1 value1 field2 value2 ... fieldN valueN 命令来保存哈希键
-
-        field1, value1, field2, value2, ..., fieldN, valueN =\
-        get_field_and_value_from_hash(key)
-
-        f.write_command("HMSET " + key + field1 + value1 + field2 + value2 +\
-                        ... + fieldN + valueN)
-
-      elif key.type == SortedSet:
-
-        # 用 ZADD key score1 member1 score2 member2 ... scoreN memberN
-        # 命令来保存有序集键
-
-        score1, member1, score2, member2, ..., scoreN, memberN = \
-        get_score_and_member_from_sorted_set(key)
-
-        f.write_command("ZADD " + key + score1 + member1 + score2 + member2 +\
-                        ... + scoreN + memberN)
-
-      else:
-
-        raise_type_error()
-
-      # 如果键带有过期时间，那么用 EXPIREAT key time 命令来保存键的过期时间
-      if key.have_expire_time():
-        f.write_command("EXPIREAT " + key + key.expire_time_in_unix_timestamp())
-
-    # 关闭文件
-    f.close()
-```
-
-#### AOF优缺点分析
-
-**优点：**
-
-1. **数据安全**，aof 持久化可以配置 appendfsync 属性，有 always，每进行一次命令操作就记录到 aof 文件中一次。
-2. 通过 append 模式写文件，即使中途服务器宕机，可以通过 redis-check-aof 工具解决数据一致性问题。
-
-**缺点：**
-
-1. AOF 文件比 RDB 文件大，且恢复速度慢。
-
-2. 数据集大的时候，比 rdb 启动效率低。
-
-
-
-**aof过程**
-
-1）所有的写入命令会追加到aof_buf缓冲区中。
-
-2）AOF缓冲区根据对应的策略向硬盘做同步操作。
-
-3）随着AOF文件越来越大，需要定期对AOF文件进行重写，达到压缩的目的。（用到了AOF_rewrite_buf）
-
-4）当Redis服务器重启时，可以加载AOF文件进行数据恢复。
-
-
-
-#### Redis启动时的数据加载
-
-<img src="images/Redis/1327889-20190905133518438-1533339070.png" alt="Redis RDB和AOF的对比" style="zoom:50%;" />
-
-Redis启动数据加载流程：
-
-1. AOF持久化开启且存在AOF文件时，优先加载AOF文件。
-2. AOF关闭或者AOF文件不存在时，加载RDB文件。
-3. 加载AOF/RDB文件成功后，Redis启动成功。
-4. AOF/RDB文件存在错误时，Redis启动失败并打印错误信息。
-
-
-
-### RBD、AOF混合持久化方式 了解
-
-Redis 4.0 开始支持 RDB 和 AOF 的混合持久化（默认关闭，可以通过配置项 `aof-use-rdb-preamble` 开启，yes则表示开启，no表示禁用，默认是禁用的，可通过config set修改。）。
-
-如果把混合持久化打开，AOF 重写的时候就直接把 RDB 的内容写到 AOF 文件开头。这样做的好处是可以结合 RDB 和 AOF 的优点, 快速加载同时避免丢失过多的数据。当然缺点也是有的， AOF 里面的 RDB 部分是压缩格式不再是 AOF 格式，可读性较差。
-
-混合持久化同样也是通过`bgrewriteaof`完成的，不同的是当开启混合持久化时，fork出的子进程先将共享的内存副本全量的以RDB方式写入aof文件，然后在将重写缓冲区的增量命令以AOF方式写入到文件，写入完成后通知主进程更新统计信息，并将新的含有RDB格式和AOF格式的AOF文件替换旧的的AOF文件。简单的说：新的AOF文件前半段是RDB格式的全量数据后半段是AOF格式的增量数据。
-
-当我们开启了混合持久化时，启动redis依然优先加载aof文件，aof文件加载可能有两种情况如下：
-
-- aof文件开头是rdb的格式, 先加载 rdb内容再加载剩余的 aof。
-- aof文件开头不是rdb的格式，直接以aof格式加载整个文件。
-
-
-
-## Redis清除策略
-
-**Redis key清除**
-
-如果集中过期，由于清除大量的key很耗时，会出现短暂的卡顿现象。
-
-解决方法：在设置key的过期时间的时候，给每个key加上随机值。
+![redis roll back](images/Redis/redis-rollBack.png)
 
 
 
@@ -1335,3 +1374,139 @@ sentinel机制还是只有一个master可以写，即便宕机后可以获取到
 **hash槽**
 
 - CRC16(key)%16384
+
+
+
+# 缓存设计
+
+## 缓存穿透
+
+### 什么是缓存穿透？
+
+缓存穿透说简单点就是大量请求的 key 根本不存在于缓存中，导致请求直接到了数据库上，根本没有经过缓存这一层。举个例子：某个黑客故意制造我们缓存中不存在的 key 发起大量请求，导致大量请求落到数据库。
+
+### 有哪些解决办法？
+
+最基本的就是首先做好参数校验，一些不合法的参数请求直接抛出异常信息返回给客户端。比如查询的数据库 id 不能小于 0、传入的邮箱格式不对的时候直接返回错误消息给客户端等等。
+
+#### 1）缓存无效 key
+
+如果缓存和数据库都查不到某个 key 的数据就写一个到 Redis 中去并设置过期时间，具体命令如下： `SET key value EX 10086` 。这种方式可以解决请求的 key 变化不频繁的情况，如果黑客恶意攻击，每次构建不同的请求 key，会导致 Redis 中缓存大量无效的 key 。很明显，**这种方案并不能从根本上解决此问题。**如果非要用这种方式来解决穿透问题的话，尽量将无效的 key 的过期时间设置短一点比如 1 分钟。
+
+另外，这里多说一嘴，一般情况下我们是这样设计 key 的： `表名:列名:主键名:主键值` 。
+
+如果用 Java 代码展示的话，差不多是下面这样的：
+
+``` java
+public Object getObjectInclNullById(Integer id) {
+    // 从缓存中获取数据
+    Object cacheValue = cache.get(id);
+    // 缓存为空
+    if (cacheValue == null) {
+        // 从数据库中获取
+        Object storageValue = storage.get(key);
+        // 缓存空对象
+        cache.set(key, storageValue);
+        // 如果存储数据为空，需要设置一个过期时间(300秒)
+        if (storageValue == null) {
+            // 必须设置过期时间，否则有被攻击的风险
+            cache.expire(key, 60 * 5);
+        }
+        return storageValue;
+    }
+    return cacheValue;
+}
+```
+
+#### 2）布隆过滤器⭐
+
+> **==Todo总结布隆过滤器==**
+
+布隆过滤器是一个非常神奇的数据结构，通过它我们可以非常方便地判断一个给定数据是否存在于海量数据中。我们需要的就是判断 key 是否合法，有没有感觉布隆过滤器就是我们想要找的那个“人”。
+
+具体是这样做的：把所有可能存在的请求的值都存放在布隆过滤器中，当用户请求过来，先判断用户发来的请求的值是否存在于布隆过滤器中。不存在的话，直接返回请求参数错误信息给客户端，存在的话才会走下面的流程。
+
+加入布隆过滤器之后的缓存处理流程图如下。
+
+![image](images/Redis/加入布隆过滤器后的缓存处理流程.png)
+
+但是，需要注意的是布隆过滤器可能会存在误判的情况。总结来说就是： **布隆过滤器说某个元素存在，小概率会误判。布隆过滤器说某个元素不在，那么这个元素一定不在。**
+
+为什么会出现误判的情况呢? 我们还要从布隆过滤器的原理来说！
+
+我们先来看一下，**当一个元素加入布隆过滤器中的时候，会进行哪些操作：**
+
+1. 使用布隆过滤器中的哈希函数对元素值进行计算，得到哈希值（有几个哈希函数得到几个哈希值）。
+2. 根据得到的哈希值，在位数组中把对应下标的值置为 1。
+
+我们再来看一下，**当我们需要判断一个元素是否存在于布隆过滤器的时候，会进行哪些操作：**
+
+1. 对给定元素再次进行相同的哈希计算；
+2. 得到值之后判断位数组中的每个元素是否都为 1，如果值都为 1，那么说明这个值在布隆过滤器中，如果存在一个值不为 1，说明该元素不在布隆过滤器中。
+
+然后，一定会出现这样一种情况：**不同的字符串可能哈希出来的位置相同。** （可以适当增加位数组大小或者调整我们的哈希函数来降低概率）
+
+
+
+## 缓存雪崩
+
+### 什么是缓存雪崩？
+
+实际上，缓存雪崩描述的就是这样一个简单的场景：**缓存在同一时间大面积的失效，后面的请求都直接落到了数据库上，造成数据库短时间内承受大量请求。** 这就好比雪崩一样，摧枯拉朽之势，数据库的压力可想而知，可能直接就被这么多请求弄宕机了。
+
+举个例子：系统的缓存模块出了问题比如宕机导致不可用。造成系统的所有访问，都要走数据库。
+
+还有一种缓存雪崩的场景是：**有一些被大量访问数据（热点缓存）在某一时刻大面积失效，导致对应的请求直接落到了数据库上。** 这样的情况，有下面几种解决办法：
+
+举个例子 ：秒杀开始 12 个小时之前，我们统一存放了一批商品到 Redis 中，设置的缓存过期时间也是 12 个小时，那么秒杀开始的时候，这些秒杀的商品的访问直接就失效了。导致的情况就是，相应的请求直接就落到了数据库上，就像雪崩一样可怕。
+
+### 有哪些解决办法？
+
+**针对 Redis 服务不可用的情况：**
+
+1. 采用 Redis 集群，避免单机出现问题整个缓存服务都没办法使用。
+2. 限流，避免同时处理大量的请求。
+
+**针对热点缓存失效的情况：**
+
+1. 设置不同的失效时间比如随机设置缓存的失效时间。
+2. 缓存永不失效。
+
+
+
+## 如何保证缓存和数据库数据的一致性？
+
+细说的话可以扯很多，但是我觉得其实没太大必要（小声BB：很多解决方案我也没太弄明白）。我个人觉得引入缓存之后，如果为了短时间的不一致性问题，选择让系统设计变得更加复杂的话，完全没必要。
+
+下面单独对  **Cache Aside Pattern（旁路缓存模式）** 来聊聊。
+
+Cache Aside Pattern 中遇到写请求是这样的：更新 DB，然后直接删除 cache 。
+
+如果更新数据库成功，而删除缓存这一步失败的情况的话，简单说两个解决方案：
+
+1. **缓存失效时间变短（不推荐，治标不治本）** ：我们让缓存数据的过期时间变短，这样的话缓存就会从数据库中加载数据。另外，这种解决办法对于先操作缓存后操作数据库的场景不适用。
+2. **增加cache更新重试机制（常用）**： 如果 cache 服务当前不可用导致缓存删除失败的话，我们就隔一段时间进行重试，重试次数可以自己定。如果多次重试还是失败的话，我们可以把当前更新失败的 key 存入队列中，等缓存服务可用之后，再将缓存中对应的 key 删除即可。
+
+
+
+# 推荐阅读
+
+《Redis实战》
+
+## 系列文章
+
+[深入学习Redis（1）：Redis内存模型](https://www.cnblogs.com/kismetv/p/8654978.html)
+
+[深入学习Redis（2）：持久化](https://www.cnblogs.com/kismetv/p/9137897.html)
+
+[深入学习Redis（3）：主从复制](https://www.cnblogs.com/kismetv/p/9236731.html)
+
+[深入学习Redis（4）：哨兵](https://www.cnblogs.com/kismetv/p/9609938.html)
+
+[深入学习Redis（5）：集群](https://www.cnblogs.com/kismetv/p/9853040.html)
+
+
+
+### 集群部分
+
+[史上最全Redis高可用技术解决方案大全](https://mp.weixin.qq.com/s?__biz=Mzg2OTA0Njk0OA==&mid=2247484850&idx=1&sn=3238360bfa8105cf758dcf7354af2814&chksm=cea24a79f9d5c36fb2399aafa91d7fb2699b5006d8d037fe8aaf2e5577ff20ae322868b04a87&token=1082669959&lang=zh_CN&scene=21#wechat_redirect)

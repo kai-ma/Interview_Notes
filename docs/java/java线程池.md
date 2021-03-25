@@ -131,9 +131,17 @@ Future 接口以及 Future 接口的实现类 FutureTask 类都可以代表异�
 
 
 
+
+
 # ThreadPoolExecutor
 
-《阿里巴巴 Java 开发手册》中强制线程池不允许使用 Executors 去创建，而是通过 ThreadPoolExecutor 构造函数的方式，这样的处理方式让写的同学更加明确线程池的运行规则，规避资源耗尽的风险
+### 线程池除了常见的4种拒绝策略，你还知道哪些？
+
+[Todo待总结](https://mp.weixin.qq.com/s?__biz=Mzg2OTA0Njk0OA==&mid=2247485679&idx=1&sn=57dbca8c9ad49e1f3968ecff04a4f735&chksm=cea24724f9d5ce3212292fac291234a760c99c0960b5430d714269efe33554730b5f71208582&token=1141994790&lang=zh_CN#rd)
+
+
+
+《阿里巴巴 Java 开发手册》中强制线程池不允许使用 Executors 去创建，而是通过 ThreadPoolExecutor 构造函数的方式，这样的处理方式让写的同学更加明确线程池的运行规则，规避资源耗尽的风险。
 
 Executors 返回线程池对象的弊端如下：
 

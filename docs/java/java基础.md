@@ -110,15 +110,25 @@ Java 语言既具有编译型语言的特征，也具有解释型语言的特征
 
 **Java 基本类型的包装类的大部分都实现了常量池技术，即 Byte,Short,Integer,Long,Character,Boolean；前面 4 种包装类默认创建了数值[-128，127] 的相应类型的缓存数据，Character 创建了数值在[0,127]范围的缓存数据，Boolean 直接返回 True Or False。如果超出对应范围仍然会去创建新的对象。** 
 
-因此如果要比较包装类的值是否相等，应该用equals()。
+#### 整型包装类值的比较
 
-为啥把缓存设置为[-128，127]区间？性能和资源之间的权衡。
+**所有整型包装类对象值的比较必须使用equals方法。**
+
+先看下面这个例子：
 
 ```java
-public static Boolean valueOf(boolean b) {
-    return (b ? TRUE : FALSE);
-}
+Integer x = 3;
+Integer y = 3;
+System.out.println(x == y);// true
+Integer a = new Integer(3);
+Integer b = new Integer(3);
+System.out.println(a == b);//false
+System.out.println(a.equals(b));//true
 ```
+
+当使用自动装箱方式创建一个Integer对象时，当数值在-128 ~127时，会将创建的 Integer 对象缓存起来，当下次再出现该数值时，直接从缓存中取出对应的Integer对象。所以上述代码中，x和y引用的是相同的Integer对象。	
+
+**为啥把缓存设置为[-128，127]区间？性能和资源之间的权衡。**
 
 ```java
 private static class CharacterCache {
@@ -191,6 +201,8 @@ i4==i5+i6   true
 解释：
 
 语句 i4 == i5 + i6，**因为+这个操作符不适用于 Integer 对象，首先 i5 和 i6 进行自动拆箱操作**，进行数值相加，即 i4 == 40。然后 Integer 对象无法与数值进行直接比较，所以 i4 自动拆箱转为 int 值 40，最终这条语句转为 40 == 40 进行数值比较。
+
+
 
 #### 自动装箱与拆箱
 
@@ -496,6 +508,17 @@ Animal animal = new Cat();
 
 
 
+**存在继承的情况下，初始化顺序为：**
+
+- 父类（静态变量、静态语句块）
+- 子类（静态变量、静态语句块）
+- 父类（实例变量、普通语句块）
+- 父类（构造函数）
+- 子类（实例变量、普通语句块）
+- 子类（构造函数）
+
+
+
 #### 在 Java 中定义一个不做事且没有参数的构造方法的作用
 
 Java 程序在执行子类的构造方法之前，如果没有用 `super()`来调用父类特定的构造方法，则会调用父类中“没有参数的构造方法”。因此，如果父类中只定义了有参数的构造方法，而在子类的构造方法中又没有用 `super()`来调用父类中特定的构造方法，则编译时将发生错误，因为 Java 程序在父类中找不到没有参数的构造方法可供执行。解决办法是在父类里加上一个不做事且没有参数的构造方法。
@@ -746,6 +769,12 @@ ii. 而泛型方法中的泛型参数对象是可修改的，因为类型参数T
 
 ## 反射
 
+> [Java 基础之—反射（非常重要）](https://blog.csdn.net/sinat_38259539/article/details/71799078)
+>
+> [Java反射使用总结](https://zhuanlan.zhihu.com/p/80519709)
+>
+> [Spring XML配置使用反射](https://segmentfault.com/a/1190000010162647?utm_source=tuicool&utm_medium=referral)
+
 ### 什么是反射
 
 **JAVA 反射机制是在运行状态中，对于任意一个类，都能够知道这个类的所有属性和方法；对于任意一个对象，都能够调用它的任意一个方法和属性；这种动态获取的信息以及动态调用对象的方法的功能称为 java 语言的反射机制。**
@@ -766,6 +795,45 @@ ii. 而泛型方法中的泛型参数对象是可修改的，因为类型参数T
 这个Class实例是JVM内部创建的，Class类的构造方法是private，只有JVM能创建Class实例，我们自己的Java程序是无法创建Class实例的。
 
 所以，JVM持有的每个Class实例都指向一个数据类型（class或interface）。实例中保存了该class的所有信息，包括类名、包名、父类、实现的接口、所有构造方法、方法、字段等，因此，如果获取了某个Class实例，我们就可以通过这个Class实例获取到该实例对应的class的所有信息，可以通过Class实例创建对象，调用方法，修改字段。
+
+### 获取 Class 对象的四种方式
+
+如果我们动态获取到这些信息，我们需要依靠 Class 对象。Class 类对象将一个类的方法、变量等信息告诉运行的程序。Java 提供了四种方式获取 Class 对象:
+
+1.知道具体类的情况下可以使用：
+
+```java
+Class alunbarClass = TargetObject.class;
+```
+
+但是我们一般是不知道具体类的，基本都是通过遍历包下面的类来获取 Class 对象，通过此方式获取Class对象不会进行初始化
+
+2.通过 `Class.forName()`传入类的路径获取：
+
+```java
+Class alunbarClass1 = Class.forName("cn.javaguide.TargetObject");
+```
+
+Class.forName(className)方法，内部实际调用的是一个native方法  forName0(className, true, ClassLoader.getClassLoader(caller), caller);
+
+第2个boolean参数表示类是否需要初始化，**Class.forName(className)默认是需要初始化。**
+
+**一旦初始化，就会触发目标对象的 static块代码执行，static参数也会被再次初始化。**
+
+3.通过对象实例`instance.getClass()`获取：
+
+```java
+Employee e = new Employee();
+Class alunbarClass2 = e.getClass();
+```
+
+4.通过类加载器`xxxClassLoader.loadClass()`传入类路径获取
+
+```java
+class clazz = ClassLoader.LoadClass("cn.javaguide.TargetObject");
+```
+
+通过类加载器获取Class对象不会进行初始化，意味着不进行包括初始化等一些列步骤，静态块和静态对象不会得到执行。
 
 
 
@@ -801,6 +869,8 @@ ii. 而泛型方法中的泛型参数对象是可修改的，因为类型参数T
 2. Spring 框架的 IOC（动态加载管理 Bean）创建对象以及 AOP（动态代理）功能都和反射有联系；
 3. 动态配置实例的属性；
 4. ......
+
+
 
 #### 反射机制的相关类
 
@@ -1121,7 +1191,7 @@ catch (IOException e) {
 }
 ```
 
-### 
+
 
 
 
@@ -1282,6 +1352,53 @@ public boolean equals(Object anObject) {
 
 
 
+### 正确使用 equals 方法
+
+Object的equals方法容易抛空指针异常，**应使用常量或确定有值的对象来调用 equals。** 
+
+举个例子：
+
+```java
+// 不能使用一个值为null的引用类型变量来调用非静态方法，否则会抛出异常
+String str = null;
+if (str.equals("SnailClimb")) {
+  ...
+} else {
+  ..
+}
+```
+
+运行上面的程序会抛出空指针异常，但是我们把第二行的条件判断语句改为下面这样的话，就不会抛出空指针异常，else 语句块得到执行。：
+
+```java
+"SnailClimb".equals(str);// false 
+```
+
+**不过更推荐使用 `java.util.Objects#equals`(JDK7 引入的工具类)。**
+
+```java
+Objects.equals(null,"SnailClimb");// false
+```
+
+我们看一下`java.util.Objects#equals`的源码就知道原因了。
+
+```java
+public static boolean equals(Object a, Object b) {
+    // 可以避免空指针异常。如果a==null的话此时a.equals(b)就不会得到执行，避免出现空指针异常。
+    return (a == b) || (a != null && a.equals(b));
+}
+```
+
+**注意：**
+
+Reference:[Java中equals方法造成空指针异常的原因及解决方案](https://blog.csdn.net/tick_tock97/article/details/72824894)
+
+- 每种原始类型都有默认值一样，如int默认值为 0，boolean 的默认值为 false，null 是任何引用类型的默认值，不严格的说是所有 Object 类型的默认值。
+- 可以使用 == 或者 != 操作来比较null值，但是不能使用其他算法或者逻辑操作。在Java中`null == null`将返回true。
+- 不能使用一个值为null的引用类型变量来调用非静态方法，否则会抛出异常
+
+
+
 ### hashCode()与 equals()
 
 面试官可能会问你：“你重写过 `hashcode` 和 `equals`么，为什么重写 `equals` 时必须重写 `hashCode` 方法？”
@@ -1325,6 +1442,22 @@ public native int hashCode();
 5. hashCode() 的默认行为是对堆上的对象产生独特值。如果没有重写 hashCode()，则该 class 的两个对象无论如何都不会相等（即使这两个对象指向相同的数据）
 
 更多关于 `hashcode()` 和 `equals()` 的内容可以查看：[Java hashCode() 和 equals()的若干问题解答](https://www.cnblogs.com/skywang12345/p/3324958.html)
+
+
+
+### Clone()
+
+```java
+protected native Object clone() throws CloneNotSupportedException
+```
+
+clone() 方法是 Object 的一个 protected 方法。Object本身没有实现Cloneable接口，所以不重写clone方法并且进行调用的话会发生CloneNotSupportedException异常。
+
+如果要使用clone方法，要实现Cloneable接口。如果一个类没有实现 Cloneable 接口又调用了 clone() 方法，就会抛出 CloneNotSupportedException。
+
+**clone() 的替代方案**
+
+使用 clone() 方法来拷贝一个对象即复杂又有风险，它会抛出异常，并且还需要类型转换。Effective Java 书上讲到，最好不要去使用 clone()，可以使用拷贝构造函数或者拷贝工厂来拷贝一个对象。
 
 
 
@@ -1420,6 +1553,23 @@ static final int hash(Object key) {
 
 # I/O
 
+## BIO,NIO,AIO
+
+https://zhuanlan.zhihu.com/p/23488863 (美团技术团队)
+
+> 熟练掌握 BIO,NIO,AIO 的基本概念以及一些常见问题是你准备面试的过程中不可或缺的一部分，另外这些知识点也是学习 Netty 的基础。
+
+- **BIO (Blocking I/O):** 同步阻塞 I/O 模式，数据的读取写入必须阻塞在一个线程内等待其完成。在活动连接数不是特别高（小于单机 1000）的情况下，这种模型是比较不错的，可以让每一个连接专注于自己的 I/O 并且编程模型简单，也不用过多考虑系统的过载、限流等问题。线程池本身就是一个天然的漏斗，可以缓冲一些系统处理不了的连接或请求。但是，当面对十万甚至百万级连接的时候，传统的 BIO 模型是无能为力的。因此，我们需要一种更高效的 I/O 处理模型来应对更高的并发量。
+- **NIO (Non-blocking/New I/O):** NIO 是一种同步非阻塞的 I/O 模型，在 Java 1.4 中引入了 NIO 框架，对应 java.nio 包，提供了 Channel , Selector，Bu
+- ffer 等抽象。NIO 中的 N 可以理解为 Non-blocking，不单纯是 New。它支持面向缓冲的，基于通道的 I/O 操作方法。 NIO 提供了与传统 BIO 模型中的 `Socket` 和 `ServerSocket` 相对应的 `SocketChannel` 和 `ServerSocketChannel` 两种不同的套接字通道实现,两种通道都支持阻塞和非阻塞两种模式。阻塞模式使用就像传统中的支持一样，比较简单，但是性能和可靠性都不好；非阻塞模式正好与之相反。对于低负载、低并发的应用程序，可以使用同步阻塞 I/O 来提升开发速率和更好的维护性；对于高负载、高并发的（网络）应用，应使用 NIO 的非阻塞模式来开发
+- **AIO (Asynchronous I/O):** AIO 也就是 NIO 2。在 Java 7 中引入了 NIO 的改进版 NIO 2,它是异步非阻塞的 IO 模型。异步 IO 是基于事件和回调机制实现的，也就是应用操作之后会直接返回，不会堵塞在那里，当后台处理完成，操作系统会通知相应的线程进行后续的操作。AIO 是异步 IO 的缩写，虽然 NIO 在网络操作中，提供了非阻塞的方法，但是 NIO 的 IO 行为还是同步的。对于 NIO 来说，我们的业务线程是在 IO 操作准备好时，得到通知，接着就由这个线程自行进行 IO 操作，IO 操作本身是同步的。
+
+查阅网上相关资料，我发现就目目前来说 AIO 的应用还不是很广泛，Netty 之前也尝试使用过 AIO，不过又放弃了。
+
+
+
+
+
 ## 获取用键盘输入常用的两种方法
 
 方法 1：通过 Scanner
@@ -1465,13 +1615,6 @@ Java Io 流共涉及 40 多个类，这些类看上去很杂乱，但实际上�
 回答：字符流是由 Java 虚拟机将字节转换得到的，问题就出在这个过程还算是非常耗时，并且，如果我们不知道编码类型就很容易出现乱码问题。所以， I/O 流就干脆提供了一个直接操作字符的接口，方便我们平时对字符进行流操作。如果音频文件、图片等媒体文件用字节流比较好，如果涉及到字符的话使用字符流比较好。
 
 
-
-## BIO,NIO,AIO
-
-- **BIO (Blocking I/O):** 同步阻塞 I/O 模式，数据的读取写入必须阻塞在一个线程内等待其完成。在活动连接数不是特别高（小于单机 1000）的情况下，这种模型是比较不错的，可以让每一个连接专注于自己的 I/O 并且编程模型简单，也不用过多考虑系统的过载、限流等问题。线程池本身就是一个天然的漏斗，可以缓冲一些系统处理不了的连接或请求。但是，当面对十万甚至百万级连接的时候，传统的 BIO 模型是无能为力的。因此，我们需要一种更高效的 I/O 处理模型来应对更高的并发量。
-- **NIO (Non-blocking/New I/O):** NIO 是一种同步非阻塞的 I/O 模型，在 Java 1.4 中引入了 NIO 框架，对应 java.nio 包，提供了 Channel , Selector，Buffer 等抽象。NIO 中的 N 可以理解为 Non-blocking，不单纯是 New。它支持面向缓冲的，基于通道的 I/O 操作方法。 NIO 提供了与传统 BIO 模型中的 `Socket` 和 `ServerSocket` 相对应的 `SocketChannel` 和 `ServerSocketChannel` 两种不同的套接字通道实现,两种通道都支持阻塞和非阻塞两种模式。阻塞模式使用就像传统中的支持一样，比较简单，但是性能和可靠性都不好；非阻塞模式正好与之相反。对于低负载、低并发的应用程序，可以使用同步阻塞 I/O 来提升开发速率和更好的维护性；对于高负载、高并发的（网络）应用，应使用 NIO 的非阻塞模式来开发
-- **AIO (Asynchronous I/O):** AIO 也就是 NIO 2。在 Java 7 中引入了 NIO 的改进版 NIO 2,它是异步非阻塞的 IO 模型。异步 IO 是基于事件和回调机制实现的，也就是应用操作之后会直接返回，不会堵塞在那里，当后台处理完成，操作系统会通知相应的线程进行后续的操作。AIO 是异步 IO 的缩写，虽然 NIO 在网络操作中，提供了非阻塞的方法，但是 NIO 的 IO 行为还是同步的。对于 NIO 来说，我们的业务线程是在 IO 操作准备好时，得到通知，接着就由这个线程自行进行 IO 操作，IO 操作本身是同步的。查阅网上相关资料，我发现就目
-- 目前来说 AIO 的应用还不是很广泛，Netty 之前也尝试使用过 AIO，不过又放弃了。
 
 
 
