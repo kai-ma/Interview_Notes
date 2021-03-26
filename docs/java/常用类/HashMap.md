@@ -510,6 +510,18 @@ final Node<K,V>[] resize() {
 
 
 
+# HashTable
+
+**`Hashtable`(同一把锁)** :使用 `synchronized` 来保证线程安全，效率非常低下。当一个线程访问同步方法时，其他线程也访问同步方法，可能会进入阻塞或轮询状态，如使用 put 添加元素，另一个线程不能使用 put 添加元素，也不能使用 get，竞争会越来越激烈效率越低。
+
+
+
+### ConcurrentHashMap和Hashtable的区别
+
+见JUC部分：[ConcurrentHashMap和Hashtable的区别](../Java多线程/JUC.md/#ConcurrentHashMap和Hashtable的区别)
+
+
+
 # TODO
 
 concurrenthashmap实现、hashtable和hashmap的区别
