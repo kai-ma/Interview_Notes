@@ -1207,17 +1207,9 @@ Redis官网也解释了自己为啥不支持回滚。简单来说就是Redis开�
 
 
 
-**问题1：当主节点宕机了，整个集群就没有可写的节点了。**
-
-由于从节点上备份了主节点的所有数据，那在主节点宕机的情况下，如果能够将从节点变成一个主节点，是不是就可以解决这个问题了呢？
-
-答：是的，这个就是Sentinel哨兵的作用。
-
-
-
-
-
 ## 哨兵
+
+**主从同步，当主服务器宕机后，需要手动把一台从服务器切换为主服务器，这就需要人工干预，费事费力，还会造成一段时间内服务不可用。**这不是一种推荐的方式，更多时候，我们优先考虑**哨兵模式**。
 
 **哨兵用于实现 redis 集群的高可用，本身也是分布式的，作为一个哨兵集群去运行，互相协同工作。**
 
@@ -1244,6 +1236,10 @@ Redis官网也解释了自己为啥不支持回滚。简单来说就是Redis开�
 ### 哨兵机制
 
 > 哨兵(sentinel) 的一些设计思路和zookeeper非常类似。
+>
+> https://segmentfault.com/a/1190000002680804
+>
+> https://www.jianshu.com/p/06ab9daf921d
 
 ##### Sentinel的集群
 
@@ -1251,7 +1247,7 @@ Redis官网也解释了自己为啥不支持回滚。简单来说就是Redis开�
   - 故障转移时，判断一个 master node 是否宕机了，需要大部分的哨兵都同意才行，并且在故障转移时涉及到了分布式选举的问题。
   - 即使部分哨兵节点挂掉了，哨兵集群还是能正常工作的，因为如果一个作为高可用机制重要组成部分的故障转移系统本身是单点的，那就很坑爹了。
 
-- **Redis多个sentinel进程使用流言协议(gossipprotocols)来接收关于Master是否下线的信息**，并使用投票协议(agreement protocols)来决定是否执行自动故障迁移，以及选择哪个Slave作为新的Master。
+- Redis多个sentinel进程使用流言协议(gossipprotocols)来接收关于Master是否下线的信息，并使用投票协议(agreement protocols)来决定是否执行自动故障迁移，以及选择哪个Slave作为新的Master。
 
 #### 定时任务----心跳机制
 
@@ -1265,32 +1261,89 @@ Redis官网也解释了自己为啥不支持回滚。简单来说就是Redis开�
   - 即 Sentinel 节点对 Redis 节点失败的偏见，超出超时时间认为 Master 已经宕机。
   - Sentinel 集群的每一个 Sentinel 节点会定时对 Redis 集群的所有节点发心跳包检测节点是否正常。如果一个节点在 `down-after-milliseconds` 时间内没有回复 Sentinel 节点的心跳包，则该 Redis 节点被该 Sentinel 节点主观下线。
 - 客观下线
-  - 所有 Sentinel 节点对 Redis 节点失败要达成共识，即超过 quorum 个统一。
+  - 所有 Sentinel 节点对 Redis 节点失败要达成共识，即超过 quorum 个统一。quorum 指明当有多少个sentinel认为一个master失效时，master才算真正失效，可以在conf文件中配置。
   - 当节点被一个 Sentinel 节点记为主观下线时，并不意味着该节点肯定故障了，还需要 Sentinel 集群的其他 Sentinel 节点共同判断为主观下线才行。
   - 该 Sentinel 节点会询问其它 Sentinel 节点，如果 Sentinel 集群中超过 quorum 数量的 Sentinel 节点认为该 Redis 节点主观下线，则该 Redis 客观下线。
 
-#### Leader选举
-
-> **Sentinel 集群运行过程中故障转移完成，所有 Sentinel 又会恢复平等。Leader 仅仅是故障转移操作出现的角色。**
-
-- 选举出一个 Sentinel 作为 Leader：集群中至少有三个 Sentinel 节点，但只有其中一个节点可完成故障转移。通过以下命令可以进行失败判定或领导者选举。
-- 选举流程
-  1. 每个主观下线的 Sentinel 节点向其他 Sentinel 节点发送命令，要求设置它为领导者.
-  2. 收到命令的 Sentinel 节点如果没有同意通过其他 Sentinel 节点发送的命令，则同意该请求，否则拒绝。
-  3. 如果该 Sentinel 节点发现自己的票数已经超过 Sentinel 集合半数且超过 quorum，则它成为领导者。
-  4. 如果此过程有多个 Sentinel 节点成为领导者，则等待一段时间再重新进行选举。
-
-#### 故障转移
+#### 故障转移 failover
 
 - 转移流程
   1. Sentinel 选出一个合适的 Slave 作为新的 Master(slaveof no one 命令)。
   2. 向其余 Slave 发出通知，让它们成为新 Master 的 Slave( parallel-syncs 参数)。
   3. 等待旧 Master 复活，并使之称为新 Master 的 Slave。
   4. 向客户端通知 Master 变化。
-- 从 Slave 中选择新 Master 节点的规则(slave 升级成 master 之后)
+  
+- **Slave选举**
+  
+  从 Slave 中选择新 Master 节点的规则(slave 升级成 master 之后)
+  
   1. 选择 slave-priority 最高的节点。
   2. 选择复制偏移量最大的节点(同步数据最多)。
   3. 选择 runId 最小的节点。
+
+#### Leader选举 了解
+
+> **Leader 仅仅是故障转移操作出现的角色，故障转移完成，所有 Sentinel 又会恢复平等**
+
+- 选举出一个 Sentinel 作为 Leader：集群中至少有三个 Sentinel 节点，但只有其中一个节点可完成故障转移。通过以下命令可以进行失败判定或领导者选举。
+
+- 选举流程
+
+  1. 每个主观下线的 Sentinel 节点向其他 Sentinel 节点发送命令，要求设置它为领导者.
+  2. 收到命令的 Sentinel 节点如果没有同意通过其他 Sentinel 节点发送的命令，则同意该请求，否则拒绝。
+  3. 如果该 Sentinel 节点发现自己的票数已经超过 Sentinel 集合半数且超过 quorum，则它成为领导者。
+  4. 如果此过程有多个 Sentinel 节点成为领导者，则等待一段时间再重新进行选举。
+
+  
+
+
+
+## 分布式集群(Cluster)
+
+==todo==https://blog.csdn.net/qq_38658567/article/details/106840141
+
+http://okgoes.cn/blog/detail?blog_id=26316
+
+[Redis集群模式搭建与原理](https://zhuanlan.zhihu.com/p/44537690)
+
+**redis 集群模式的工作原理能说一下么？在集群模式下，redis 的 key 是如何寻址的？分布式寻址都有哪些算法？了解一致性 hash 算法吗？**
+
+
+
+### Redis集群工作原理
+
+
+
+
+
+
+
+sentinel机制还是只有一个master可以写，即便宕机后可以获取到新的master，但是master只有一台，性能还是有很大的瓶颈，master可能被撑爆。
+
+**分片机制**  把数据分成几片------多个master，通过ip的hash取模来进行路由，也就是下面的hash取模
+
+### 分布式寻址
+
+#### hash取模
+
+- hash(key)%机器数量
+- 问题
+  1. 机器宕机，造成数据丢失，数据读取失败
+  1. 伸缩性  **如果要增加一台master，数据迁移过程很痛苦**
+
+#### 一致性hash 重点了解
+
+
+
+问题：
+
+1. 一致性哈希算法在节点太少时，容易因为节点分布不均匀而造成缓存热点的问题。
+   - 解决方案
+     - 可以通过引入虚拟节点机制解决：即对每一个节点计算多个 hash，每个计算结果位置都放置一个虚拟节点。这样就实现了数据的均匀分布，负载均衡。
+
+**hash槽**
+
+- CRC16(key)%16384
 
 
 
@@ -1344,36 +1397,7 @@ Gossip 协议规定，节点会定期随机选择周围节点发送消息，而�
 
 
 
-## 分布式集群(Cluster)
 
-**redis 集群模式的工作原理能说一下么？在集群模式下，redis 的 key 是如何寻址的？分布式寻址都有哪些算法？了解一致性 hash 算法吗？**
-
-sentinel机制还是只有一个master可以写，即便宕机后可以获取到新的master，但是master只有一台，性能还是有很大的瓶颈，master可能被撑爆。
-
-**分片机制**  把数据分成几片------多个master，通过ip的hash取模来进行路由，也就是下面的hash取模
-
-### 分布式寻址
-
-#### hash取模
-
-- hash(key)%机器数量
-- 问题
-  1. 机器宕机，造成数据丢失，数据读取失败
-  1. 伸缩性  **如果要增加一台master，数据迁移过程很痛苦**
-
-#### 一致性hash 重点了解
-
-
-
-问题：
-
-1. 一致性哈希算法在节点太少时，容易因为节点分布不均匀而造成缓存热点的问题。
-   - 解决方案
-     - 可以通过引入虚拟节点机制解决：即对每一个节点计算多个 hash，每个计算结果位置都放置一个虚拟节点。这样就实现了数据的均匀分布，负载均衡。
-
-**hash槽**
-
-- CRC16(key)%16384
 
 
 

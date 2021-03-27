@@ -1,30 +1,34 @@
 # 并发容器
 
+![juc中的并发容器](images/JUC/JUC Collection.png)
+
 JDK 提供的这些容器大部分在 **java.util.concurrent** 包中。
 
-- **ConcurrentHashMap:** 线程安全的 HashMap。在进行读操作时(几乎)不需要加锁，而在写操作只对所操作的结点加锁而不影响客户端对其它结点的访问。
+- **ConcurrentHashMap:** 线程安全的 HashMap。在进行读操作时(几乎)不需要加锁，而在写操作只对所操作的结点加锁而不影响客户端对其它结点的访问。读读互不影响，读写也不互斥，不过是弱一致性的，写写互斥。
 - **CopyOnWriteArrayList/Set:** 线程安全的 ArrayList/set，**读取是完全不用加锁的**，**写入也不会阻塞读取操作。**只有写入和写入之间需要进行同步等待。 在读多写少的场合性能非常好，远远好于 Vector。
 - **ConcurrentLinkedQueue:** 线程安全的LinkedList，高效的并发**非阻塞队列。采用CAS volatile**
-- **BlockingQueue:** 这是一个接口，JDK 内部通过链表、数组等方式实现了这个接口。表示阻塞队列，**非常适合用于作为数据共享的通道。**ArrayBlockingQueue（有界队列）、LinkedBlockingQueue、PriorityBlockingQueue（无界队列）
+- **BlockingQueue:** 阻塞队列，**非常适合用于作为数据共享的通道。**ArrayBlockingQueue（有界队列）、LinkedBlockingQueue、PriorityBlockingQueue（无界队列） 都依靠`ReentrantLock`实现线程安全。
 - **ConcurrentSkipListMap:** 跳表的实现。这是一个 Map，使用跳表的数据结构进行快速查找。
 
+各种`BlockingQueue`都用的`ReentrantLock`，因为要用到`Condition`和实现公平等功能。`CopyOnWriteArrayList`的写锁也用的是`ReentrantLock`。
 
+`ConcurrentHashMap`的节点锁用的`synchronized`。
+
+`ConcurrentLinkedQueue`用CAS实现添加删除，同时所有用`ReentrantLock`的一定会用到CAS。
+
+并发包中的容器类基本都不支持插入 null 值，因为 null 值往往用作其他用途，比如用于方法的返回值代表操作失败）。ConcurrentHashMap的key和value都不能为null，这点与HashMap不同，HashMap key可以一个null，value没有限制。
 
 ## ConcurrentHashMap
 
 我们知道 HashMap 不是线程安全的，在并发场景下如果要保证一种可行的方式是使用 `Collections.synchronizedMap()` 方法来包装我们的 HashMap。但这是通过使用一个全局的锁来同步不同线程间的并发访问，因此会带来不可忽视的性能问题。
 
-所以就有了 HashMap 的线程安全版本—— ConcurrentHashMap 的诞生。在 ConcurrentHashMap 中，无论是读操作还是写操作都能保证很高的性能：**在进行读操作时(几乎)不需要加锁，而在写操作时通过锁分段技术只对所操作的段加锁而不影响客户端对其它段的访问。**
-
-
+所以就有了 HashMap 的线程安全版本—— ConcurrentHashMap 的诞生。在 ConcurrentHashMap 中，无论是读操作还是写操作都能保证很高的性能：**在进行读操作时(几乎)不需要加锁，而在写操作时通过锁节点只对所操作的节点加锁而不影响客户端对其它节点的访问。读写操作也可以并发进行，不过是弱一致性的。**
 
 相关问题：
 
 **Collections的synchronize方法包装一个线程安全的Map，或者直接用ConcurrentHashMap两者的区别是什么？**
 
 前者直接在put和get方法加了synchronize同步，后者采用了结点锁以及CAS支持更高的并发。
-
-
 
 ### ConcurrentHashMap 线程安全的具体实现方式
 
@@ -64,8 +68,6 @@ static class Segment<K,V> extends ReentrantLock implements Serializable {
 ![Java8 ConcurrentHashMap 存储结构（图片来自 javadoop）](images/JUC/java8_concurrenthashmap.png)
 
 JDK1.8 的 `ConcurrentHashMap` 不在是 **Segment 数组 + HashEntry 数组 + 链表**，而是 **Node 数组 + 链表 / 红黑树**。不过，Node 只能用于链表的情况，红黑树的情况需要使用 **`TreeNode`**。当冲突链表达到一定长度时，链表会转换成红黑树。
-
-
 
 ### ConcurrentHashMap和Hashtable的区别
 
@@ -408,8 +410,6 @@ final V replaceNode(Object key, V value, Object cv) {
 }
 ```
 
-
-
 ### [ConcurrentHashMap能完全替代HashTable吗](https://blog.csdn.net/programmer_at/article/details/79715177#4-concurrenthashmap能完全替代hashtable吗)
 
 HashTable虽然性能上不如ConcurrentHashMap，但并不能完全被取代，两者的迭代器的一致性不同的，**HashTable的迭代器是强一致性的，而ConcurrentHashMap是弱一致的。**ConcurrentHashMap的get，clear，iterator 都是弱一致性的。
@@ -422,6 +422,524 @@ HashTable虽然性能上不如ConcurrentHashMap，但并不能完全被取代，
 在上面对remove的分析也知道remove操作也是弱一致性的。
 
 
+
+## CopyOnWriteArrayList/CopyOnWriteArraySet
+
+这两种类的性质可以参考官方对`CopyOnWriteArraySet`的注释：
+
+> A Set that uses an internal CopyOnWriteArrayList for all of its operations. Thus, it shares the same basic properties:
+>
+> - It is best suited for applications in which set sizes generally **stay small, read-only operations** vastly outnumber mutative operations, and you need to prevent interference among threads during traversal.
+> - It is thread-safe.
+> - Mutative operations (add, set, remove, etc.) are expensive since they usually entail copying the entire underlying array.
+> - Iterators do not support the mutative remove operation.
+> - Traversal via iterators is fast and cannot encounter interference from other threads. Iterators rely on **unchanging snapshots** of the array at the time the iterators were constructed.
+
+### CopyOnWriteArrayList 简介
+
+```java
+public class CopyOnWriteArrayList<E>
+    implements List<E>, RandomAccess, Cloneable, java.io.Serializable {
+    private static final long serialVersionUID = 8673264195747942595L;
+
+    /** The lock protecting all mutators */
+    final transient ReentrantLock lock = new ReentrantLock();
+
+    /** The array, accessed only via getArray/setArray. */
+    private transient volatile Object[] array;
+
+    /**
+     * Gets the array.  Non-private so as to also be accessible
+     * from CopyOnWriteArraySet class.
+     */
+    final Object[] getArray() {
+        return array;
+    }
+
+    /**
+     * Sets the array.
+     */
+    final void setArray(Object[] a) {
+        array = a;
+    }
+
+    /**
+     * Creates an empty list.
+     */
+    public CopyOnWriteArrayList() {
+        setArray(new Object[0]);
+    }
+}
+```
+
+在很多应用场景中，读操作可能会远远大于写操作。由于读操作根本不会修改原有的数据，因此对于每次读取都进行加锁其实是一种资源浪费。我们应该允许多个线程同时访问 List 的内部数据，毕竟读取操作是安全的。
+
+JUC中的 `CopyOnWriteArrayList` 类，在 `ReentrantReadWriteLock` 读写锁的思想又更进一步（`ReentrantReadWriteLock` 读写锁读读共享、写写互斥、读写互斥、写读互斥）。为了将读取的性能发挥到极致，**`CopyOnWriteArrayList` 支持读写分离，读取是快照读，与MVCC原理一样，完全不用加锁**，并且更厉害的是：**写入也不会阻塞读取操作(因为新建了副本)。只有写入和写入之间需要进行同步等待。**这样一来，读操作的性能就会大幅度提升。
+
+### CopyOnWriteArrayList 是如何做到的？
+
+从 `CopyOnWriteArrayList` 的名字就能看出 `CopyOnWriteArrayList` 是满足 `CopyOnWrite` 的 `ArrayList`，所谓 `CopyOnWrite` 也就是说：在计算机，如果你想要对一块内存进行修改时，我们**不在原有内存块中进行写操作，而是将内存拷贝一份，在新的内存中进行写操作，写完之后呢，就将指向原来内存指针指向新的内存，原来的内存就可以被回收掉了。**
+
+`CopyOnWriteArrayList` 的所有可变操作（add，set，remove等等）都是通过**创建底层数组的新副本**来实现的。当 List 需要被修改的时候，并不修改原有内容，而是对原有数据进行一次**复制**，将修改的内容写入副本。写完之后，再将修改完的副本替换原来的数据，这样就可以保证写操作不会影响读操作了。
+
+### CopyOnWriteArrayList 读取和写入源码简单分析
+
+#### CopyOnWriteArrayList 读取操作的实现
+
+**读取操作没有任何同步控制和锁操作**，**和读ArrayList一样。**原因是内部数组 array 不会发生修改，只会被另外一个 array 替换，因此可以保证数据安全。
+
+```java
+/** The array, accessed only via getArray/setArray. */
+private transient volatile Object[] array;
+public E get(int index) {
+    return get(getArray(), index);
+}
+@SuppressWarnings("unchecked")
+private E get(Object[] a, int index) {
+    return (E) a[index];
+}
+final Object[] getArray() {
+    return array;
+}
+```
+
+#### CopyOnWriteArrayList 写入操作的实现
+
+在添加元素时，首先复制了一个快照，然后在快照上进行添加，而不是直接在原来数组上进行。add() 方法加了锁，保证了同步，避免了多线程写的时候会 copy 出多个副本出来。
+
+array被volatile修饰了，让其他还没读的看到换了新的数组，正在读的还读的旧数组——弱一致性。
+
+```java
+/**
+* Appends the specified element to the end of this list.
+* @param e element to be appended to this list
+* @return {@code true} (as specified by {@link Collection#add})
+*/
+public boolean add(E e) {
+    final ReentrantLock lock = this.lock; //用的final修饰
+    lock.lock();//加锁
+    try {
+        Object[] elements = getArray();
+        int len = elements.length;
+        Object[] newElements = Arrays.copyOf(elements, len + 1);//拷贝新数组
+        newElements[len] = e;
+        setArray(newElements);
+        return true;
+    } finally {
+        lock.unlock();//释放锁
+    }
+}
+```
+
+### CopyOnWriteArrayList的缺点
+
+#### 内存占用问题
+
+适用于多读少写场景。写操作一多，不但写写互斥会加锁，更重要的是会不断拷贝创建副本。特别是对超大对象的修改时，性能消耗会很严重。
+
+针对内存占用问题，可以通过压缩容器中的元素的方法来减少大对象的内存消耗，比如，如果元素全是10进制的数字，可以考虑把它压缩成36进制或64进制。或者不使用CopyOnWrite容器，而使用其他的并发容器，如[ConcurrentHashMap](http://ifeve.com/concurrenthashmap/)。
+
+#### 弱一致性问题
+
+`CopyOnWrite容器`只能保证数据的最终一致性，不能保证数据的实时一致性。所以如果你希望写入的的数据，马上能读到，请不要使用CopyOnWrite容器。**【当执行add或remove操作没完成时，get获取的仍然是快照——旧数组的元素】**
+
+**如果用迭代器读，读的是快照版本，弱一致性。**
+
+弱一致性是指返回迭代器后，其它线程对list的增删改对迭代器是不可见的。调用迭代器的时候，给迭代器传入当前数组，迭代器中用final修饰，数组引用不会再修改。继承自ListIterator的对迭代器的删除，添加操作都会抛出异常。
+
+```java
+/**
+* Returns an iterator over the elements in this list in proper sequence.
+*
+* <p>The returned iterator provides a snapshot of the state of the list
+* when the iterator was constructed. No synchronization is needed while
+* traversing the iterator. The iterator does <em>NOT</em> support the
+* {@code remove} method.
+*
+* @return an iterator over the elements in this list in proper sequence
+*/
+public Iterator<E> iterator() {
+    return new COWIterator<E>(getArray(), 0);
+}
+
+static final class COWIterator<E> implements ListIterator<E> {
+    /** Snapshot of the array */
+    private final Object[] snapshot;
+    /** Index of element to be returned by subsequent call to next.  */
+    private int cursor;
+
+    private COWIterator(Object[] elements, int initialCursor) {
+        cursor = initialCursor;
+        snapshot = elements;
+    }
+
+    public boolean hasNext() {
+        return cursor < snapshot.length;
+    }
+
+    public boolean hasPrevious() {
+        return cursor > 0;
+    }
+
+    @SuppressWarnings("unchecked")
+    public E next() {
+        if (! hasNext())
+            throw new NoSuchElementException();
+        return (E) snapshot[cursor++];
+    }
+
+    @SuppressWarnings("unchecked")
+    public E previous() {
+        if (! hasPrevious())
+            throw new NoSuchElementException();
+        return (E) snapshot[--cursor];
+    }
+
+    public int nextIndex() {
+        return cursor;
+    }
+
+    public int previousIndex() {
+        return cursor-1;
+    }
+
+    /**
+         * Not supported. Always throws UnsupportedOperationException.
+         * @throws UnsupportedOperationException always; {@code remove}
+         *         is not supported by this iterator.
+         */
+    public void remove() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+         * Not supported. Always throws UnsupportedOperationException.
+         * @throws UnsupportedOperationException always; {@code set}
+         *         is not supported by this iterator.
+         */
+    public void set(E e) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+         * Not supported. Always throws UnsupportedOperationException.
+         * @throws UnsupportedOperationException always; {@code add}
+         *         is not supported by this iterator.
+         */
+    public void add(E e) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void forEachRemaining(Consumer<? super E> action) {
+        Objects.requireNonNull(action);
+        Object[] elements = snapshot;
+        final int size = elements.length;
+        for (int i = cursor; i < size; i++) {
+            @SuppressWarnings("unchecked") E e = (E) elements[i];
+            action.accept(e);
+        }
+        cursor = size;
+    }
+}
+```
+
+
+
+## ConcurrentLinkedQueue
+
+Java 提供的线程安全的 Queue 可以分为阻塞队列和非阻塞队列，其中**阻塞队列的典型例子是 `BlockingQueue`，非阻塞队列的典型例子是 `ConcurrentLinkedQueue`**，在实际应用中要根据实际需要选用阻塞队列或者非阻塞队列。
+
+**阻塞队列通过加锁来实现，非阻塞队列通过 CAS 操作实现。**
+
+`ConcurrentLinkedQueue` 内部变量都是volatile修饰的，add等方法都是使用无锁的CAS 非阻塞算法来实现（`UNSAFE.compareAndSwapObject`）。
+
+- 从名字上就知道底层是用链表实现的，双向链表，因此不支持随机读取，指定位置读取和删除操作都不是O(1)的。
+
+- 除了有`ConcurrentLinkedQueue` ，还有`ConcurrentLinkedDeque`，与它类似，是Deque的线程安全版。
+- 是在高并发环境中性能最好的队列，线程安全，适合多读场景。如果对队列加锁的成本较高则适合使用无锁的 ConcurrentLinkedQueue来替代。
+
+```java
+public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
+    implements Queue<E>, java.io.Serializable {
+    private static class Node<E> {
+        volatile E item;
+        volatile Node<E> next;
+        ...
+    }
+
+    private transient volatile Node<E> head;
+    private transient volatile Node<E> tail;
+}
+```
+
+### CAS实现添加删除
+
+[源码分析](https://www.jianshu.com/p/231caf90f30b)
+
+[java并发面试常识之ConcurrentLinkedQueue](https://www.imooc.com/article/details/id/26439)
+
+```java
+public boolean add(E e) {
+    return offer(e);
+}
+public boolean offer(E e) {
+    checkNotNull(e);   //为空判断，e为null是抛异常
+    final Node<E> newNode = new Node<E>(e); //将e包装成newNode
+    for (Node<E> t = tail, p = t;;) {  //循环cas，直至加入成功
+        //t = p = tail 
+        Node<E> q = p.next;
+        if (q == null) {   //判断p是否为尾节点
+            //如果是，p.next = newNode
+            if (p.casNext(null, newNode)) {
+                //首次添加时，p 等于t，不进行尾节点更新，所以所尾节点存在滞后性  
+                //并发环境，可能存添加/删除，tail就更难保证正确指向最后节点。
+                if (p != t) 
+                    //更新尾节点为最新元素
+                    casTail(t, newNode);  
+                return true;
+            }
+        }
+        else if (p == q)
+            //当tail不执行最后节点时，如果执行出列操作，很有可能将tail也给移除了    
+            //此时需要对tail节点进行复位，复位到head节点
+            p = (t != (t = tail)) ? t : head;
+        else
+            //推动tail尾节点往队尾移动
+            p = (p != t && t != (t = tail)) ? t : q;
+    }
+}
+```
+
+```java
+public E poll() {
+    restartFromHead:
+    for (;;) {
+        for (Node<E> h = head, p = h, q;;) {
+            //入列折腾的tail，那出列折腾的就是head
+            E item = p.item;
+            //出列判断依据是节点的item=null
+            //item ！= null， 并且能将操作节点的item设置null， 表示出列成功
+            if (item != null && p.casItem(item, null)) {
+                if (p != h) 
+                    //一旦出列成功需要对head进行移动
+                    updateHead(h, ((q = p.next) != null) ? q : p);
+                return item;
+            }
+            else if ((q = p.next) == null) {
+                updateHead(h, p);
+                return null;
+            }
+            else if (p == q)
+                //第一轮操作失败，下一轮继续，调回到循环前
+                continue restartFromHead;
+            else
+                //推动head节点移动
+                p = q;
+        }
+    }
+}
+```
+
+
+
+## BlockingQueue
+
+==TODO[解读 java 并发队列 BlockingQueue](https://javadoop.com/post/java-concurrent-queue "https://javadoop.com/post/java-concurrent-queue")==
+
+阻塞队列（BlockingQueue）相比于 `ConcurrentLinkedQueue` 使用更广泛。典型适用场景是“生产者-消费者”问题：BlockingQueue 提供了**可阻塞的插入和移除**的方法。当队列容器已满，生产者线程会被阻塞，直到队列未满；当队列容器为空时，消费者线程会被阻塞，直至队列非空时为止。
+
+`BlockingQueue` 是一个接口，继承自 `Queue`，其实现类都属于线程安全的` Queue`。常用的四个实现类：`ArrayBlockingQueue`、`LinkedBlockingQueue`、`PriorityBlockingQueue`、`SynchronousQueue`。
+
+**都用的ReentrantLock  lock.lockInterruptibly();  可以调用interrupt方法中断**
+
+**获取不到锁的在队列阻塞等待着**
+
+
+
+### ArrayBlockingQueue
+
+**ArrayBlockingQueue** 是 BlockingQueue 接口的**有界**队列实现类，底层采用**数组**来实现。ArrayBlockingQueue 一旦创建，容量不能改变。其并发控制采用可重入锁 `ReentrantLock` 来控制，不管是插入操作还是读取操作，都需要获取到锁才能进行操作。当队列容量满时，尝试将元素放入队列将导致操作阻塞；尝试从一个空队列中取一个元素也会同样阻塞。
+
+因为依赖于`ReentrantLock`，可以选择公平锁还是非公平锁。所谓公平性是指先来先服务，即最先等待的线程能够最先访问到 ArrayBlockingQueue。
+
+默认情况下不能保证线程访问队列的公平性。如果保证公平性，通常会降低吞吐量。构造方法传入第二个参数获取公平阻塞队列：
+
+```java
+public ArrayBlockingQueue(int capacity) {
+    this(capacity, false);
+}
+public ArrayBlockingQueue(int capacity, boolean fair){...}
+```
+
+#### 源码分析
+
+**使用经典的 two-condition algorithm**
+
+```java
+public class ArrayBlockingQueue<E> extends AbstractQueue<E>
+        implements BlockingQueue<E>, java.io.Serializable {
+    /** The queued items */
+    final Object[] items;
+
+    /** items index for next take, poll, peek or remove */
+    int takeIndex;
+    /** items index for next put, offer, or add */
+    int putIndex;
+    /** Number of elements in the queue */
+    int count;
+
+    /*
+     * Concurrency control uses the classic two-condition algorithm
+     * found in any textbook.
+     */
+
+    /** Main lock guarding all access */
+    final ReentrantLock lock;
+
+    /** Condition for waiting takes */
+    private final Condition notEmpty;
+
+    /** Condition for waiting puts */
+    private final Condition notFull;
+}
+```
+
+##### put
+
+```java
+public void put(E e) throws InterruptedException {
+    checkNotNull(e);  //e是null，throw new NullPointerException();
+    final ReentrantLock lock = this.lock;
+    //https://blog.csdn.net/u013851082/article/details/70140223
+    lock.lockInterruptibly();  
+    try {
+        while (count == items.length){
+            notFull.await();   //满了
+        }
+        enqueue(e);  //放入并通知
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+##### take
+
+```java
+public E take() throws InterruptedException {
+    final ReentrantLock lock = this.lock;
+    lock.lockInterruptibly();
+    try {
+        while (count == 0)
+            notEmpty.await();
+        return dequeue();
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+##### enqueue
+
+```java
+
+/**
+     * Inserts element at current put position, advances, and signals.
+     * Call only when holding lock.
+     */
+private void enqueue(E x) {
+    // assert lock.getHoldCount() == 1;
+    // assert items[putIndex] == null;
+    final Object[] items = this.items;
+    items[putIndex] = x;
+    if (++putIndex == items.length)
+        putIndex = 0;
+    count++;
+    notEmpty.signal();
+}
+```
+
+### LinkedBlockingQueue
+
+**LinkedBlockingQueue** 基于单向链表实现的阻塞队列，可以当做无界队列也可以当做有界队列来使用，同样满足 FIFO 的特性，与 ArrayBlockingQueue 相比起来具有**更高的吞吐量**，为了防止 LinkedBlockingQueue 容量迅速增，损耗大量内存。通常在创建 LinkedBlockingQueue 对象时，会指定其大小，如果未指定，容量等于 Integer.MAX_VALUE。
+
+**相关构造方法:**
+
+```java
+    /**
+     *某种意义上的无界队列
+     * Creates a {@code LinkedBlockingQueue} with a capacity of
+     * {@link Integer#MAX_VALUE}.
+     */
+    public LinkedBlockingQueue() {
+        this(Integer.MAX_VALUE);
+    }
+
+    /**
+     *有界队列
+     * Creates a {@code LinkedBlockingQueue} with the given (fixed) capacity.
+     *
+     * @param capacity the capacity of this queue
+     * @throws IllegalArgumentException if {@code capacity} is not greater
+     *         than zero
+     */
+    public LinkedBlockingQueue(int capacity) {
+        if (capacity <= 0) throw new IllegalArgumentException();
+        this.capacity = capacity;
+        last = head = new Node<E>(null);
+    }
+```
+
+### PriorityBlockingQueue
+
+**PriorityBlockingQueue** 是`PriorityQueue`的线程安全版本，是一个支持优先级的无界阻塞队列。默认情况下元素采用自然顺序进行排序，也可以通过自定义类实现 `compareTo()` 方法来指定元素排序规则，或者初始化时通过构造器参数 `Comparator` 来指定排序规则。
+
+PriorityBlockingQueue 并发控制采用的是 **ReentrantLock**，队列为无界队列，可以传入初始大小，会动态扩容，不能设置上限。
+
+与`PriorityQueue`一样，插入队列的对象必须是可比较大小的（comparable），否则报 ClassCastException 异常。它的插入操作 put 方法不会 block，因为它是无界队列（take 方法在队列为空的时候会阻塞）。
+
+### SynchronousQueue
+
+CachedThreadPool用到
+
+它是一个特殊的队列，它的名字其实就蕴含了它的特征 - - 同步的队列。为什么说是同步的呢？这里说的并不是多线程的并发问题，而是因为当一个线程往队列中写入一个元素时，写入操作不会立即返回，需要等待另一个线程来将这个元素拿走；同理，当一个读线程做读操作的时候，同样需要一个相匹配的写线程的写操作。这里的 Synchronous 指的就是**读线程和写线程需要同步**，一个读线程匹配一个写线程。
+
+SynchronousQueue 的队列其实是虚的，其不提供任何空间（一个都没有）来存储元素。它不会为队列中元素维护存储空间。与其他队列不同的是，它维护一组线程，这些线程在等待着把元素加入或移出队列。数据必须从某个写线程交给某个读线程，而不是写到某个队列中等待被消费。
+
+
+
+**一种无缓冲的等待队列**，类似于无中介的直接交易，有点像原始社会中的生产者和消费者，生产者拿着产品去集市销售给产品的最终消费者，**而消费者必须亲自去集市找到所要商品的直接生产者**，如果一方没有找到合适的目标，那么对不起，大家都在集市等待。
+
+因为SynchronousQueue没有存储功能，**因此put和take会一直阻塞**，直到有另一个线程已经准备好参与到交付过程中。仅当有足够多的消费者，并且总是有一个消费者准备好获取交付的工作时，才适合使用同步队列。
+
+你不能在 SynchronousQueue 中使用 peek 方法（在这里这个方法直接返回 null），peek 方法的语义是只读取不移除，显然，这个方法的语义是不符合 SynchronousQueue 的特征的。SynchronousQueue 也不能被迭代，因为根本就没有元素可以拿来迭代的。虽然 SynchronousQueue 间接地实现了 Collection 接口，但是如果你将其当做 Collection 来用的话，那么集合是空的。
+
+
+
+## ConcurrentSkipListMap
+
+**依靠cas实现**
+
+使用跳表实现 Map 和使用哈希算法实现 Map 的另外一个不同之处是：哈希并不会保存元素的顺序，而跳表内所有的元素都是排序的。因此在对跳表进行遍历时，你会得到一个有序的结果。所以，如果你的应用需要**有序性**，那么跳表就是你不二的选择。JDK 中实现这一数据结构的类是 ConcurrentSkipListMap。
+
+
+
+下面这部分内容参考了极客时间专栏[《数据结构与算法之美》](https://time.geekbang.org/column/intro/126?code=zl3GYeAsRI4rEJIBNu5B/km7LSZsPDlGWQEpAYw5Vu0=&utm_term=SPoster)以及《实战 Java 高并发程序设计》。
+
+**为了引出 ConcurrentSkipListMap，先带着大家简单理解一下跳表。**
+
+**跳表用的是一种利用空间换时间的算法。**
+
+对于一个单链表，即使链表是有序的，如果我们想要在其中查找某个数据，也只能从头到尾遍历链表，这样效率自然就会很低，跳表就不一样了。跳表是一种可以用来快速查找的数据结构，有点类似于平衡树。它们都可以对元素进行快速的查找。但一个重要的区别是：对平衡树的插入和删除往往很可能导致平衡树进行一次全局的调整。而对跳表的**插入和删除**只需要对整个数据结构的**局部**进行操作即可。这样带来的好处是：在高并发的情况下，你会需要一个全局锁来保证整个平衡树的线程安全。而对于跳表，你只需要**部分锁**即可。这样，在**高并发环境下，你就可以拥有更好的性能。**而就查询的性能而言，跳表的时间复杂度也是 **O(logn)** 所以在并发数据结构中，JDK 使用跳表来实现一个 Map。
+
+跳表的本质是同时维护了多个链表，并且链表是**分层**的，最低层的链表维护了跳表内所有的元素，每上面一层链表都是下面一层的子集。
+
+跳表内的所有链表的元素都是排序的。查找时，可以从顶级链表开始找。一旦发现被查找的元素大于当前链表中的取值，就会转入下一层链表继续找。这也就是说在查找过程中，搜索是跳跃式的。如下图所示，在跳表中查找元素 18。
+
+![在跳表中查找元素18](images/JUC/32005738.jpg)
+
+查找 18 的时候原来需要遍历 18 次，现在只需要 7 次即可。针对链表长度比较大的时候，构建索引查找效率的提升就会非常明显。
 
 
 
