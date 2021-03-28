@@ -6,7 +6,7 @@
 
 ![juc中的并发容器](images/summary/JUC Collection.png)
 
-#### ConcurrentHashMap
+#### ConcurrentHashMap 🔥
 
 线程安全的HashMap
 
@@ -78,7 +78,92 @@ JDK1.7  分段的数组+链表。JDK1.8之后，数组+链表/红黑二叉树，
 
 ## 结构型设计模式
 
-### 代理模式
+### 代理模式 🔥
+
+**核心：控制对其他对象的访问，并且做一些增强。**
+
+#### 静态代理
+
+代理对象和目标对象共同实现一个抽象接口，客户通过代理对象来访问目标对象的方法，代理对象控制访问，并且做增强。相当于在目标对象上面包了一层，做一些公共的事情，并且控制对目标对象的访问。
+
+缺点：类太多，每个目标对象就得有一个代理对象。
+
+#### 动态代理 AOP的核心！
+
+**推荐阅读：[知乎-动态代理的作用是什么](https://www.zhihu.com/question/20794107/answer/23330381)**
+
+**通过反射，在代码运行期间动态生成代理类，代理的是接口，一个动态代理可以代理很多类！为所有目标类提供一些通用的增强方法，比如插入日志-AOP。**
+
+##### JDK动态代理的原理
+
+Proxy类有一个静态方法`newProxyInstance`，传入目标对象的Classloader，接口，代理对象的`InvocationHandler`，就可以动态生成代理对象。
+
+每一个代理对象绑定一个`InvocationHandler`，当代理对象的方法被调用时，会调用代理对象绑定的`InvocationHandler`的invoke方法，在invoke方法中调用代理对象的同名方法，并且做一些增强。
+
+```java
+public class Proxy implements java.io.Serializable {
+    public static Object newProxyInstance(ClassLoader loader,
+                                          Class<?>[] interfaces,
+                                          InvocationHandler h);
+}
+```
+
+```java
+public interface InvocationHandler {
+    public Object invoke(Object proxy, Method method, Object[] args)
+        throws Throwable;
+}
+```
+
+**具体过程：**
+
+复制传入的接口，通过接口和类加载器，直接拼接生成字节数组class文件，然后调用native方法defineclass生成clazz对象，创建出了代理的类clazz。然后通过反射获取到代理类clazz的构造函数，通过这个构造函数new一个代理对象，构造函数的参数是InvocationHandler。当代理对象的方法被调用时，会调用InvocationHandler的invoke方法，调用目标对象的方法，并实现增强。
+
+举例：
+
+```java
+public class ProxyInvocationHandler implements InvocationHandler {
+   private Object target;
+
+   public void setTarget(Object target) {
+       this.target = target;
+  }
+
+   //生成代理类
+   public Object getProxy(){
+       return Proxy.newProxyInstance(this.getClass().getClassLoader(),
+               target.getClass().getInterfaces(),this);
+  }
+
+   // proxy : 代理类
+   // method : 代理类的调用处理程序的方法对象.
+   public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+       log(method.getName());
+       Object result = method.invoke(target, args);
+       return result;
+  }
+
+   public void log(String methodName){
+       System.out.println("执行了"+methodName+"方法");
+  }
+}
+```
+
+```java
+public class Test {
+   public static void main(String[] args) {
+       //真实对象
+       UserServiceImpl userService = new UserServiceImpl();
+       //代理对象的调用处理程序
+       ProxyInvocationHandler pih = new ProxyInvocationHandler();
+       //设置要代理的对象 可以是任意对象！！
+       pih.setTarget(userService);
+       UserService proxy = (UserService)pih.getProxy(); //动态生成代理类！
+       //可以换成接口中的任意方法！！！
+       proxy.delete();  
+  }
+}
+```
 
 
 

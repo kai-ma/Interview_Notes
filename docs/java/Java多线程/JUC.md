@@ -937,9 +937,52 @@ SynchronousQueue 的队列其实是虚的，其不提供任何空间（一个都
 
 跳表内的所有链表的元素都是排序的。查找时，可以从顶级链表开始找。一旦发现被查找的元素大于当前链表中的取值，就会转入下一层链表继续找。这也就是说在查找过程中，搜索是跳跃式的。如下图所示，在跳表中查找元素 18。
 
-![在跳表中查找元素18](images/JUC/32005738.jpg)
+![在跳表中查找元素18](images/JUC/跳表.jpg)
 
 查找 18 的时候原来需要遍历 18 次，现在只需要 7 次即可。针对链表长度比较大的时候，构建索引查找效率的提升就会非常明显。
+
+
+
+# 原子类
+
+todo总结
+
+**原子类**  **适用于计数器，累加器等**
+
+java.util.concurrent.atomic目录下
+
+AtomicInteger 类主要利用 **CAS (compare and swap) + volatile 和 native** 方法来保证原子操作，从而避免 synchronized 的高开销，执行效率大为提升。
+
+CAS的原理是拿期望的值和原本的一个值作比较，如果相同则更新成新的值。UnSafe 类的 objectFieldOffset() 方法是一个本地方法，这个方法是用来拿到“原来的值”的内存地址。另外 value 是一个volatile变量，在内存中可见，因此 JVM 可以保证任何时刻任何线程总能拿到该变量的最新值。
+
+**基本类型** 
+
+使用原子的方式更新基本类型
+
+- AtomicInteger：整型原子类
+- AtomicLong：长整型原子类
+- AtomicBoolean ：布尔型原子类
+
+**数组类型**
+
+使用原子的方式更新数组里的某个元素
+
+- AtomicIntegerArray：整型数组原子类
+- AtomicLongArray：长整型数组原子类
+- AtomicReferenceArray ：引用类型数组原子类
+
+**引用类型**
+
+- AtomicReference：引用类型原子类
+- AtomicReferenceFieldUpdater：原子更新引用类型里的字段
+- AtomicMarkableReference ：原子更新带有标记位的引用类型
+
+**对象的属性修改类型**
+
+- AtomicIntegerFieldUpdater:原子更新整型字段的更新器
+- AtomicLongFieldUpdater：原子更新长整型字段的更新器
+- **AtomicStampedReference** ：原子更新带有版本号的引用类型。该类将整数值与引用关联起来，可用于解决原子的更新数据和数据的版本号，可以解决使用 CAS 进行原子更新时可能出现的 ABA 问题。
+- AtomicMarkableReference：原子更新带有标记的引用类型。该类将 boolean 标记与引用关联起来，也可以解决使用 CAS 进行原子更新时可能出现的 ABA 问题。
 
 
 
