@@ -25,3 +25,17 @@ IOC是一种编程思想，由主动编程变成了被动接收。
 **@Qualifier：结合@Autowired使用**，在按照类型的基础上，**注入指定名称的bean**。`@Qualifier(value = "happyDog")`
 
 **@Resource：先按名称注入，再按类型注入。按名称注入，直接按照bean的id注入。**`@Resource(name = "happyDog")`
+
+
+
+
+
+## AOP
+
+**使用JDK还是CGLIB？**
+
+1）如果目标对象实现了接口，默认情况下会采用JDK的动态代理实现AOP。
+
+2）如果目标对象实现了接口，可以强制使用CGLIB实现AOP。在spring配置中加入`<aop:aspectj-autoproxy proxy-target-class="true"/>）`。 
+
+3）如果目标对象没有实现了接口，会采用CGLIB库，Spring会自动在JDK动态代理和CGLIB之间转换。

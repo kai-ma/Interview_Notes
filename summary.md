@@ -80,46 +80,88 @@ JDK1.7  分段的数组+链表。JDK1.8之后，数组+链表/红黑二叉树，
 
 ### 代理模式 🔥
 
-**核心：控制对其他对象的访问，并且做一些增强。**
+**核心：使用代理对象来代替对真实对象(real object)的访问，这样就可以在不修改原目标对象的前提下，扩展目标对象的功能。**
+
+#### 静态代理和动态代理的对比
+
+1. **灵活性** ：动态代理更加灵活，不需要必须实现接口，可以直接代理实现类，并且可以不需要针对每个目标类都创建一个代理类。另外，静态代理中，接口一旦新增加方法，目标对象和代理对象都要进行修改，这是非常麻烦的！
+2. **JVM 层面** ：静态代理在编译时就将接口、实现类、代理类这些都变成了一个个实际的 class 文件。而动态代理是在运行时动态生成类字节码，并加载到 JVM 中的。
 
 #### 静态代理
 
 代理对象和目标对象共同实现一个抽象接口，客户通过代理对象来访问目标对象的方法，代理对象控制访问，并且做增强。相当于在目标对象上面包了一层，做一些公共的事情，并且控制对目标对象的访问。
 
-缺点：类太多，每个目标对象就得有一个代理对象。
+**静态代理中，我们对目标对象的每个方法的增强都是手动完成的，非常不灵活（_比如接口一旦新增加方法，目标对象和代理对象都要进行修改_）且麻烦(_需要对每个目标类都单独写一个代理类_)。**
 
-#### 动态代理 AOP的核心！
+#### 动态代理——AOP的核心！
 
 **推荐阅读：[知乎-动态代理的作用是什么](https://www.zhihu.com/question/20794107/answer/23330381)**
 
 **通过反射，在代码运行期间动态生成代理类，代理的是接口，一个动态代理可以代理很多类！为所有目标类提供一些通用的增强方法，比如插入日志-AOP。**
 
-##### JDK动态代理的原理
+##### JDK 动态代理和 CGLIB 动态代理对比
 
-Proxy类有一个静态方法`newProxyInstance`，传入目标对象的Classloader，接口，代理对象的`InvocationHandler`，就可以动态生成代理对象。
+1. **一个基于接口实现，一个基于类的继承实现** 
 
-每一个代理对象绑定一个`InvocationHandler`，当代理对象的方法被调用时，会调用代理对象绑定的`InvocationHandler`的invoke方法，在invoke方法中调用代理对象的同名方法，并且做一些增强。
+   JDK动态代理只能对实现了接口的类生成代理，而不能针对类。
 
-```java
-public class Proxy implements java.io.Serializable {
-    public static Object newProxyInstance(ClassLoader loader,
-                                          Class<?>[] interfaces,
-                                          InvocationHandler h);
-}
-```
+   CGLIB是针对类实现代理，主要是对指定的类生成一个子类，覆盖其中的方法。因此对于final类或方法，是无法继承的。
+
+2. **JDK效率更高**
+
+   JDK 和 CGLib 都是在运行期生成字节码，JDK 是直接写 Class 字节码，CGLib 使用 ASM 框架写 Class 字节码，Cglib 代理实现更复杂，生成代理类比 JDK 效率低。每一次jdk版本升级，jdk代理效率都得到提升，而CGLIB代理消息确有点跟不上步伐。
+
+**Spring 中的 AOP 模块中：如果目标对象实现了接口，则默认采用 JDK 动态代理，否则采用 CGLIB 动态代理。**
+
+##### JDK动态代理
+
+**在 Java 动态代理机制中 `InvocationHandler` 接口和 `Proxy` 类是核心。**都在`java.lang.reflect`包下面。
+
+步骤一：定义一个接口及其实现类；也就是被代理对象。
+
+步骤二：自定义 `InvocationHandler` 并重写`invoke`方法，在 `invoke` 方法中我们会调用原生方法（被代理类的方法）并自定义一些处理逻辑；
+
+实现`InvocationHandler` 来自定义处理逻辑。 当我们的动态代理对象调用一个方法时候，这个方法的调用就会被转发到实现`InvocationHandler` 接口类的 `invoke` 方法来调用。
 
 ```java
 public interface InvocationHandler {
-    public Object invoke(Object proxy, Method method, Object[] args)
-        throws Throwable;
+    //当你使用代理对象调用方法的时候实际会调用到这个方法
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable;
 }
 ```
 
-**具体过程：**
+`invoke()` 方法有下面三个参数：
+
+1. **proxy** :动态生成的代理类
+2. **method** : 与代理类对象调用的方法相对应
+3. **args** : 当前 method 方法的参数
+
+也就是说：**你通过`Proxy` 类的 `newProxyInstance()` 创建的代理对象在调用方法的时候，实际会调用到实现`InvocationHandler` 接口的类的 `invoke()`方法。**在invoke方法中调用代理对象的同名方法，并且做一些增强：比如在方法执行前后做什么事情。
+
+步骤三：通过 `Proxy.newProxyInstance(ClassLoader loader,Class<?>[] interfaces,InvocationHandler h)` 方法创建代理对象；
+
+`Proxy` 类中使用频率最高的方法是：`newProxyInstance()` ，这个方法主要用来生成一个代理对象。传入目标对象的Classloader，接口，代理对象的`InvocationHandler`，就可以动态生成代理对象。
+
+```java
+public static Object newProxyInstance(ClassLoader loader,
+                                      Class<?>[] interfaces,
+                                      InvocationHandler h)
+    throws IllegalArgumentException
+```
+
+这个方法一共有 3 个参数：
+
+1. **loader** :类加载器，用于加载代理对象。
+2. **interfaces** : 被代理类实现的一些接口；
+3. **h** : 实现了 `InvocationHandler` 接口的对象；
+
+**动态生成代理类过程**
 
 复制传入的接口，通过接口和类加载器，直接拼接生成字节数组class文件，然后调用native方法defineclass生成clazz对象，创建出了代理的类clazz。然后通过反射获取到代理类clazz的构造函数，通过这个构造函数new一个代理对象，构造函数的参数是InvocationHandler。当代理对象的方法被调用时，会调用InvocationHandler的invoke方法，调用目标对象的方法，并实现增强。
 
-举例：
+**举例：**
+
+一般会把步骤二和步骤三写到一起：
 
 ```java
 public class ProxyInvocationHandler implements InvocationHandler {
@@ -165,7 +207,39 @@ public class Test {
 }
 ```
 
+##### CGLIB 动态代理
 
+**在 CGLIB 动态代理机制中 `MethodInterceptor` 接口和 `Enhancer` 类是核心。**
+
+通过 `Enhancer`类来动态获取被代理类，当代理类调用方法的时候，实际调用的是 `MethodInterceptor` 中的 `intercept` 方法。
+
+步骤一：自定义 `MethodInterceptor` 并重写 `intercept` 方法，`intercept` 用于拦截增强被代理类的方法，和 JDK 动态代理中的 `invoke` 方法类似；
+
+```java
+public interface MethodInterceptor extends Callback{
+    // 拦截被代理类中的方法
+    public Object intercept(Object obj, java.lang.reflect.Method method, Object[] 	
+                            args,MethodProxy proxy) throws Throwable;
+}
+```
+
+1. **obj** :目标对象（需要增强的对象）
+2. **method** :被拦截的方法（需要增强的方法）
+3. **args** :方法入参
+4. **methodProxy** :用于调用原始方法
+
+步骤二：通过 `Enhancer` 类的`setSuperclass`设置目标对象，`setCallback`传入`MethodInterceptor` 设置回调对象，然后 `create()`创建代理对象；
+
+```java
+net.sf.cglib.proxy.Enhancer;
+Enhancer enhancer = new Enhancer();
+// 设置enhancer对象的父类  也就是被代理的对象
+enhancer.setSuperclass(HelloService.class);
+// 设置enhancer的回调对象
+enhancer.setCallback(new MyMethodInterceptor());
+//创建代理对象！
+HelloService proxy= (HelloService)enhancer.create();
+```
 
 
 

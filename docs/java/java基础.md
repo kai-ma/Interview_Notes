@@ -1551,6 +1551,104 @@ static final int hash(Object key) {
 
 
 
+### comparable 和 Comparator 的区别
+
+- `comparable` 接口实际上是出自`java.lang`包 它有一个 `compareTo(Object obj)`方法用来排序
+- `comparator`接口实际上是出自 java.util 包它有一个`compare(Object obj1, Object obj2)`方法用来排序
+
+一般我们需要对一个集合使用自定义排序时，我们就要重写`compareTo()`方法或`compare()`方法，当我们需要对某一个集合实现两种排序方式，比如一个 song 对象中的歌名和歌手名分别采用一种排序方法的话，我们可以重写`compareTo()`方法和使用自制的`Comparator`方法或者以两个 Comparator 来实现歌名排序和歌星名排序。
+
+#### 实现Comparable接口来自定义TreeMap、PQ排序对象
+
+```java
+// person对象实现Comparable接口，就可以使传入treemap，PQ中的数据按顺序排列
+public  class Person implements Comparable<Person> {
+    private String name;
+    private int age;
+
+    public Person(String name, int age) {
+        super();
+        this.name = name;
+        this.age = age;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public int getAge() {
+        return age;
+    }
+
+    public void setAge(int age) {
+        this.age = age;
+    }
+
+    /**
+     * T重写compareTo方法实现按年龄来排序
+     */
+    @Override
+    public int compareTo(Person o) {
+        if (this.age > o.getAge()) {
+            return 1;
+        }
+        if (this.age < o.getAge()) {
+            return -1;
+        }
+        return 0;
+    }
+}
+
+```
+
+```java
+public static void main(String[] args) {
+    TreeMap<Person, String> pdata = new TreeMap<Person, String>();
+    pdata.put(new Person("张三", 30), "zhangsan");
+    pdata.put(new Person("李四", 20), "lisi");
+    pdata.put(new Person("王五", 10), "wangwu");
+    pdata.put(new Person("小红", 5), "xiaohong");
+    // 得到key的值的同时得到key所对应的值
+    Set<Person> keys = pdata.keySet();
+    for (Person key : keys) {
+        System.out.println(key.getAge() + "-" + key.getName());
+    }
+}
+```
+
+Output：
+
+```
+5-小红
+10-王五
+20-李四
+30-张三
+```
+
+#### Comparator 定制排序
+
+```java
+List<Integer> list = new ArrayList(Arrays.asList(3, 2, 1));
+
+Collections.sort(list, new Comparator<Integer>() {
+    @Override
+    public int compare(Integer o1, Integer o2) {
+        return o1.compareTo(o2);
+    }
+});
+//也可以使用lambda表达式
+Collections.sort(list, (o1, o2) -> (o1 - o2));
+Collections.sort(list, Comparator.comparingInt(o -> o));
+```
+
+
+
+
+
 # I/O
 
 ## BIO,NIO,AIO
