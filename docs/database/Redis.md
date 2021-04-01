@@ -274,7 +274,133 @@ typedef struct redisDb {
 
 
 
+## Redis删除策略
+
+**删除的策略需要在内存和cpu之间寻找一个平衡， 定时删除+惰性删除  折中的定期删除**
+
+通过名字大概就能猜出这两个删除方式的意思了。
+
+- **定时过期**：每个设置过期时间的key都需要创建一个定时器，到过期时间就会立即清除。该策略可以立即清除过期的数据，对内存很友好；但是会占用大量的CPU资源去处理过期的数据，从而影响缓存的响应时间和吞吐量。
+- **惰性删除** ：只有当访问一个key时，才会判断该key是否已过期，过期则清除。该策略可以最大化地节省CPU资源，却对内存非常不友好。极端情况可能出现大量的过期key没有再次被访问，从而不会被清除，占用大量内存。
+- **定期过期**：每隔一定的时间，会扫描一定数量的数据库的expires字典中一定数量的key，并清除其中已过期的key。该策略是前两者的一个折中方案。通过调整定时扫描的时间间隔和每次扫描的限定耗时，可以在不同情况下使得CPU和内存资源达到最优的平衡效果。
+
+(expires字典会保存所有设置了过期时间的key的过期时间数据，其中，key是指向键空间中的某个键的指针，value是该键的毫秒精度的UNIX时间戳表示的过期时间。键空间是指该Redis集群中保存的所有键。
+
+定期过期策略由位于src/redis.c的activeExpireCycle(void)函数，针对每个db在限制的时间REDIS_EXPIRELOOKUPS_TIME_LIMIT内尽可能多的删除过期key。因此，**Redis会周期性的随机测试一批设置了过期时间的key并进行处理。**测试到的已过期的key将被删除。
+
+
+
+
+info查看：
+
+![在这里插入图片描述](images/Redis/redis-info-server.png)
+
+key的定期删除会在Redis的周期性执行任务（serverCron，默认每100ms执行一次）中进行，而且是发生Redis的master节点，因为**slave节点会通过主节点的DEL命令同步过来达到删除key的目的。**
+
+典型例子：
+
+Redis启动服务器初始化时,读取配置server.hz的值,默认为10，代表每秒钟调用10次`serverCorn`的后台任务。 Redis每秒做10次如下的步骤：
+
+- 依次遍历每个db（默认配置数是16），针对每个db，每次循环随机选择`ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP`个-20个key判断是否过期
+- 删除所有发现的已过期的key
+- 如果一轮所选的key少于`ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP`/4，也就是少于25%的key过期，则终止迭次。
+- 若删除的key超过25%，则重复步骤1，此外在迭代过程中如果超过了一定的时间限制则终止过期删除这一过程。
+
+这是一个基于概率的简单算法，基本的假设是抽出的样本能够代表整个key空间，redis持续清理过期的数据直至将要过期的key的百分比降到了25%以下。这也意味着在任何给定的时刻已经过期但仍占据着内存空间的key的量最多为每秒的写操作量除以4。
+
+```C
+for (j = 0; j < dbs_per_call; j++) {
+ int expired;
+ redisDb *db = server.db+(current_db % server.dbnum);
+ 
+ /* Increment the DB now so we are sure if we run out of time
+  * in the current DB we'll restart from the next. This allows to
+  * distribute the time evenly across DBs. */
+ current_db++;
+ 
+ /* Continue to expire if at the end of the cycle more than 25%
+  * of the keys were expired. */
+ do {
+  unsigned long num, slots;
+  long long now, ttl_sum;
+  int ttl_samples;
+ 
+  /* 如果该db没有设置过期key，则继续看下个db*/
+  if ((num = dictSize(db->expires)) == 0) {
+   db->avg_ttl = 0;
+   break;
+  }
+  slots = dictSlots(db->expires);
+  now = mstime();
+ 
+  /* When there are less than 1% filled slots getting random
+   * keys is expensive, so stop here waiting for better times...
+   * The dictionary will be resized asap. */
+  if (num && slots > DICT_HT_INITIAL_SIZE &&
+   (num*100/slots < 1)) break;
+ 
+  /* The main collection cycle. Sample random keys among keys
+   * with an expire set, checking for expired ones. */
+  expired = 0;
+  ttl_sum = 0;
+  ttl_samples = 0;
+ 
+  if (num > ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP)
+   num = ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP;// 20
+ 
+  while (num--) {
+   dictEntry *de;
+   long long ttl;
+ 
+   if ((de = dictGetRandomKey(db->expires)) == NULL) break;
+   ttl = dictGetSignedIntegerVal(de)-now;
+   if (activeExpireCycleTryExpire(db,de,now)) expired++;
+   if (ttl > 0) {
+    /* We want the average TTL of keys yet not expired. */
+    ttl_sum += ttl;
+    ttl_samples++;
+   }
+  }
+ 
+  /* Update the average TTL stats for this database. */
+  if (ttl_samples) {
+   long long avg_ttl = ttl_sum/ttl_samples;
+ 
+   /* Do a simple running average with a few samples.
+    * We just use the current estimate with a weight of 2%
+    * and the previous estimate with a weight of 98%. */
+   if (db->avg_ttl == 0) db->avg_ttl = avg_ttl;
+   db->avg_ttl = (db->avg_ttl/50)*49 + (avg_ttl/50);
+  }
+ 
+  /* We can't block forever here even if there are many keys to
+   * expire. So after a given amount of milliseconds return to the
+   * caller waiting for the other active expire cycle. */
+  iteration++;
+  if ((iteration & 0xf) == 0) { /* 每迭代16次检查一次 */
+   long long elapsed = ustime()-start;
+ 
+   latencyAddSampleIfNeeded("expire-cycle",elapsed/1000);
+   if (elapsed > timelimit) timelimit_exit = 1;
+  }
+ // 超过时间限制则退出
+  if (timelimit_exit) return;
+  /* 在当前db中，如果少于25%的key过期，则停止继续删除过期key */
+ } while (expired > ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP/4);
+}
+```
+
+但是，仅仅通过给 key 设置过期时间还是有问题的。因为还是可能存在定期删除和惰性删除漏掉了很多过期  key 的情况。这样就导致大量过期 key 堆积在内存里，然后就Out of memory了。
+
+怎么解决这个问题呢？答案就是： **Redis 内存淘汰机制。**
+
+
+
 ## Redis内存淘汰机制
+
+**Redis的内存用完了会发生什么？**
+
+如果达到设置的上限，Redis的写命令会返回错误信息（但是读命令还可以正常返回）或者可以配置内存淘汰机制，当Redis达到内存上限时会冲刷掉旧的内容。
 
 ### Redis 内存淘汰机制了解么
 
@@ -292,9 +418,13 @@ Redis 提供 6 种数据淘汰策略：
 7. **volatile-lfu（least frequently used）**：从已设置过期时间的数据集(server.db[i].expires)中挑选最不经常使用的数据淘汰
 8. **allkeys-lfu（least frequently used）**：当内存不足以容纳新写入数据时，在键空间中，移除最不经常使用的 key
 
+**最好是代码层面主动更新。**
 
+- LRU、LFU 算法自动清除：一致性最差，维护成本低。
+- 超时自动清除(key expire)：一致性较差，维护成本低。
+- 主动更新：代码层面控制生命周期，一致性最好，维护成本高。
 
-MySQL 里有 2000w 数据，Redis 中只存 20w 的数据，如何保证 Redis 中的数据都是热点数据?
+**MySQL 里有 2000w 数据，Redis 中只存 20w 的数据，如何保证 Redis 中的数据都是热点数据?**
 
 **首先计算出20w数据所需的内存空间，设置最大内存，然后选择合适的内存淘汰策略：**
 
@@ -970,6 +1100,29 @@ set key value [ex seconds] [px milliseconds] [nx|xx]
 
 问题1：10s的时间够不够？如果时间过短，还没执行完业务逻辑就已经释放了锁。又引起了新的问题！也就是说**在程序执行期间，锁不能过期。**
 
+下面这种能解决吗？-不能。如果setnx的执行成功，还没设置expire就挂了怎么办呢？
+
+```java
+String get(String key) {  
+   String value = redis.get(key);  
+   if (value  == null) {  
+    if (redis.setnx(key_mutex, "1")) {  //只有一个能进来
+        // 3 min timeout to avoid mutex holder crash  
+        redis.expire(key_mutex, 3 * 60)  
+        value = db.get(key);  
+        redis.set(key, value);  
+        redis.delete(key_mutex);  
+    } else {  
+        //其他线程休息50毫秒后重试  
+        Thread.sleep(50);  
+        get(key);  
+    }  
+  }  
+} 
+
+缺点：代码复杂度增大  存在死锁的风险
+```
+
 **解决办法：看门狗watch dog**，我计划用1min，还剩30s的时候你看到我还没出来，就给我续期1min，这样循环，直到我出来。
 
 可以用开源的Redission实现，相当于Jedis，Java连接Redis的开源工具。tryAcquireAsync()方法中的scheduleExpirationRenewal(threadId)这个方法。[博客1](https://blog.csdn.net/asd051377305/article/details/108384490)
@@ -979,8 +1132,6 @@ set key value [ex seconds] [px milliseconds] [nx|xx]
 问题2：如果时间过长，其他程序在10s之后获取到了key，等这个线程执行完业务逻辑的时候，出来delete key，把这个key又删掉了。
 
 解决办法：Redis可不止存了key啊，还有对应的value没有利用到。应该加一个判断，**getKey里面的value是自己设置的value，才可以删除。**
-
-
 
 **问题3：Redis实例挂掉怎么办？**
 
@@ -1403,17 +1554,39 @@ Gossip 协议规定，节点会定期随机选择周围节点发送消息，而�
 
 # 缓存设计
 
-## 缓存穿透
+## 缓存击穿、缓存穿透、缓存雪崩
 
-### 什么是缓存穿透？
+https://www.jianshu.com/p/d00348a9eb3b
 
-缓存穿透说简单点就是大量请求的 key 根本不存在于缓存中，导致请求直接到了数据库上，根本没有经过缓存这一层。举个例子：某个黑客故意制造我们缓存中不存在的 key 发起大量请求，导致大量请求落到数据库。
+### redis击穿
 
-### 有哪些解决办法？
+缓存击穿，是指一个key非常热点，在不停的扛着大并发，大并发集中对这一个点进行访问，当这个key在**失效的瞬间**，持续的大并发就穿破缓存，直接请求数据库，就像瞬间在一个屏障上凿开了一个洞。
 
-最基本的就是首先做好参数校验，一些不合法的参数请求直接抛出异常信息返回给客户端。比如查询的数据库 id 不能小于 0、传入的邮箱格式不对的时候直接返回错误消息给客户端等等。
+显然，非常热的数据才会造成缓存击穿。
 
-#### 1）缓存无效 key
+**1.设置超级热点数据永远不过期  更常用简单的做法**
+
+**2.给从数据库读数据加互斥锁——不让高并发读数据库。单机环境用并发包的Lock类型，集群环境则使用分布式锁(redis的setnx)**
+
+在实际分布式场景中，我们还可以使用 redis、tair、zookeeper 等提供的分布式锁来实现。
+
+**3. 采用 L1 (一级缓存)和 L2(二级缓存) 缓存方式**，L1 缓存失效时间短，L2 缓存失效时间长。 请求优先从 L1 缓存获取数据，如果 L1缓存未命中则加锁，只有 1 个线程获取到锁，这个线程再从数据库中读取数据并将数据再更新到到 L1 缓存和 L2 缓存中，而其他线程依旧从 L2 缓存获取数据并返回。L2 缓存中可能会存在脏数据，需要业务能够容忍这种短时间的不一致。而且，这种方案可能会造成额外的缓存空间浪费。
+
+
+
+### 缓存穿透
+
+#### 什么是缓存穿透？
+
+​    缓存穿透，是查询一个数据库一定不存在的数据。大量请求的 key 根本不存在于缓存中，导致请求直接到了数据库上，根本没有经过缓存这一层(业务代码的 bug、或恶意攻击)，**同时后端数据库也没有查询到相应的记录、无法添加缓存。**这种状态会一直维持，流量一直打到存储层上，无法利用缓存、还会给存储层带来巨大压力。
+
+举个例子：某个黑客故意制造不存在的 key 发起大量请求，导致大量请求落到数据库。
+
+#### 有哪些解决办法？
+
+**最基本的就是首先做好参数校验**，一些不合法的参数请求直接抛出异常信息返回给客户端。比如查询的数据库 id 不能小于 0、传入的邮箱格式不对的时候直接返回错误消息给客户端等等。
+
+##### 1）较短时间缓存无效 key
 
 如果缓存和数据库都查不到某个 key 的数据就写一个到 Redis 中去并设置过期时间，具体命令如下： `SET key value EX 10086` 。这种方式可以解决请求的 key 变化不频繁的情况，如果黑客恶意攻击，每次构建不同的请求 key，会导致 Redis 中缓存大量无效的 key 。很明显，**这种方案并不能从根本上解决此问题。**如果非要用这种方式来解决穿透问题的话，尽量将无效的 key 的过期时间设置短一点比如 1 分钟。
 
@@ -1442,9 +1615,13 @@ public Object getObjectInclNullById(Integer id) {
 }
 ```
 
-#### 2）布隆过滤器⭐
+##### 2）布隆过滤器⭐
 
 > **==Todo总结布隆过滤器==**
+
+**guava中就有  bit数组 多个hash 计算之后把数组对应位置置1** 
+
+**key对应的所有hash计算之后的位置做且运算，有一个地方不是1就说明没有这个key。**
 
 布隆过滤器是一个非常神奇的数据结构，通过它我们可以非常方便地判断一个给定数据是否存在于海量数据中。我们需要的就是判断 key 是否合法，有没有感觉布隆过滤器就是我们想要找的那个“人”。
 
@@ -1472,9 +1649,9 @@ public Object getObjectInclNullById(Integer id) {
 
 
 
-## 缓存雪崩
+### 缓存雪崩
 
-### 什么是缓存雪崩？
+#### 什么是缓存雪崩？
 
 实际上，缓存雪崩描述的就是这样一个简单的场景：**缓存在同一时间大面积的失效，后面的请求都直接落到了数据库上，造成数据库短时间内承受大量请求。** 这就好比雪崩一样，摧枯拉朽之势，数据库的压力可想而知，可能直接就被这么多请求弄宕机了。
 
@@ -1484,21 +1661,44 @@ public Object getObjectInclNullById(Integer id) {
 
 举个例子 ：秒杀开始 12 个小时之前，我们统一存放了一批商品到 Redis 中，设置的缓存过期时间也是 12 个小时，那么秒杀开始的时候，这些秒杀的商品的访问直接就失效了。导致的情况就是，相应的请求直接就落到了数据库上，就像雪崩一样可怕。
 
-### 有哪些解决办法？
+#### 有哪些解决办法？
+
+缓存失效：可能会带来的缓存雪崩。
+
+可以考虑给每一个缓存的数据加上一个失效标记，若过期则启动另外一个线程进行缓存数据的更新。
 
 **针对 Redis 服务不可用的情况：**
 
-1. 采用 Redis 集群，避免单机出现问题整个缓存服务都没办法使用。
-2. 限流，避免同时处理大量的请求。
+**如果缓存数据库是分布式部署，将热点数据均匀分布在不同的缓存数据库中。**
+
+- 事前：Redis 高可用，Redis集群，避免全盘崩溃。发现机器宕机尽快补上。选择合适的内存淘汰策略。
+- **事中：本地 ehcache 缓存 + hystrix限流 & 降级，避免避免同时处理大量的请求，而使数据库承受太多压力。**
+- 事后：**利用 redis 持久化机制保存的数据尽快恢复缓存**
 
 **针对热点缓存失效的情况：**
 
-1. 设置不同的失效时间比如随机设置缓存的失效时间。
+1. **缓存数据的过期时间设置随机，防止同一时间大量数据过期现象发生（类似削一下峰）。**不同分类商品，缓存不同周期。在同一分类中的商品，加上一个**随机因子**。这样能尽可能分散缓存过期时间，而且，热门类目的商品缓存时间长一些，冷门类目的商品缓存时间短一些，也能节省缓存服务的资源。
 2. 缓存永不失效。
 
 
 
+## 缓存预热
+
+缓存预热就是系统上线后，将相关的缓存数据直接加载到缓存系统。这样就可以避免在用户请求的时候，先查询数据库，然后再将数据缓存的问题！用户直接查询事先被预热的缓存数据！
+
+**解决方案**
+
+1、直接写个缓存刷新页面，上线时手工操作一下；
+
+2、数据量不大，可以在项目启动的时候自动进行加载；
+
+3、定时刷新缓存；
+
+
+
 ## 如何保证缓存和数据库数据的一致性？
+
+**换句话说：如何解决缓存的脏读和失效的问题？**
 
 细说的话可以扯很多，但是我觉得其实没太大必要（小声BB：很多解决方案我也没太弄明白）。我个人觉得引入缓存之后，如果为了短时间的不一致性问题，选择让系统设计变得更加复杂的话，完全没必要。
 
@@ -1510,6 +1710,16 @@ Cache Aside Pattern 中遇到写请求是这样的：更新 DB，然后直接删
 
 1. **缓存失效时间变短（不推荐，治标不治本）** ：我们让缓存数据的过期时间变短，这样的话缓存就会从数据库中加载数据。另外，这种解决办法对于先操作缓存后操作数据库的场景不适用。
 2. **增加cache更新重试机制（常用）**： 如果 cache 服务当前不可用导致缓存删除失败的话，我们就隔一段时间进行重试，重试次数可以自己定。如果多次重试还是失败的话，我们可以把当前更新失败的 key 存入队列中，等缓存服务可用之后，再将缓存中对应的 key 删除即可。
+
+
+
+可以考虑对更新操作（写操作）的时候先删除缓存，然后再更新数据库。
+
+但这样做也不一定是好的：缓存脏读某种程度上都是不可避免的，因此除非尽可能的避免脏读还要考虑业务的容忍性问题。
+
+更新操作时删除缓存，涉及数据表少的时候可以那么做，但是如果一旦业务复杂起来，涉及数据表又多，那么代码中就会耦合大量缓存删除和更新操作，代码变得雍容，以后加新功能也要去操作缓存。所以脏读真的很难避免；
+
+如果业务不复杂，涉及数据表还不算多，缓存更新方面可以使用redis的订阅机制，本地专门有个redis监听订阅的线程去异步更新缓存。
 
 
 
