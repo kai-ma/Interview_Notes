@@ -918,6 +918,66 @@ for (String s : set) {
 
 
 
+# LinkedHashMap
+
+![这里写图片描述](images/HashMap/LinkedHashMap)
+
+HashMap和双向链表合二为一即是LinkedHashMap。所谓LinkedHashMap，其落脚点在HashMap，因此更准确地说，它是一个将所有Entry节点链入一个双向链表的HashMap。由于LinkedHashMap是HashMap的子类，所以LinkedHashMap自然会拥有HashMap的所有特性。比如，LinkedHashMap的元素存取过程基本与HashMap基本类似，只是在细节实现上稍有不同。当然，这是由LinkedHashMap本身的特性所决定的，因为它额外维护了一个双向链表用于保持迭代顺序。
+
+LinkedHashMap可以很好的支持LRU算法。
+
+```java
+class LRUCache {
+
+    private int cap;
+	private Map<Integer, Integer> map = new LinkedHashMap<>();  // 保持插入顺序
+
+	public LRUCache(int capacity) {
+		this.cap = capacity;
+	}
+
+	public int get(int key) {
+		if (map.keySet().contains(key)) {
+			int value = map.get(key);
+			map.remove(key);
+                       // 保证每次查询后，都在末尾
+			map.put(key, value);
+			return value;
+		}
+		return -1;
+	}
+
+	public void put(int key, int value) {
+		if (map.keySet().contains(key)) {
+			map.remove(key);
+		} else if (map.size() == cap) {
+			Iterator<Map.Entry<Integer, Integer>> iterator = map.entrySet().iterator();
+			iterator.next();
+			iterator.remove();
+		}
+		map.put(key, value);
+	}
+}
+```
+
+
+
+
+
+# TreeMap
+
+`TreeMap` 和`HashMap` 都继承自`AbstractMap` ，但是需要注意的是`TreeMap`它还实现了`NavigableMap`接口和`SortedMap` 接口。
+
+**TreeMap的实现是红黑树。**
+
+实现`SortedMap` 接口让`TreeMap`有了排序的能力。默认是按 key 的升序排序，也可以指定排序的比较器。
+
+实现 `NavigableMap` 接口让 `TreeMap` 有了对集合内元素的搜索的能力。比如`floorKey(K key);``K ceilingKey(K key);`这些方法。
+
+
+
+
+
 # TODO
 
 concurrenthashmap实现、hashtable和hashmap的区别
@@ -930,22 +990,11 @@ concurrenthashmap 的 **resize 操作是怎么做的？需要加锁吗？**
 
 ConcurrentHashMap的put操作过程？
 
-HashMap说一下，其中的Key需要重写hashCode()和equals()吗？
-
-**HashMap中key和value可以为null吗？允许几个为null呀？**
-
-**hashtable不可以，hashmap可以有一个**
-
 HashMap线程安全吗?ConcurrentHashMap和hashTable有什么区别？
 
 同步锁的hashmap哪里1.7会出现volatie 1.8版本哪里会说到syn cas这样一延伸一下应该就不会单独问你5 6 两个问题 第二个问题 你回答了hashmap可以允许k v都为空但是Hashtbale不行 最后再解释一下为啥不行 菜鸡的建议 如果有错大佬勿喷
 
 谈谈Hashmap，为什么要用红黑树
-
-- - hashmap扩容
-  - 扩容因子
-  - 为什么0.75
-  - 扩容倍数
 
 HashMap，ConcurrentHashMap
 

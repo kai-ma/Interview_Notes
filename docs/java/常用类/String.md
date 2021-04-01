@@ -12,8 +12,6 @@
 
 
 
-#### Java8的StringBuffer是不是也用了Synchronized Java8的新特性
-
 #### String、StringBuffer、StringBuilder的区别
 
 [String，StringBuilder，StringBuffer 实现原理解析](https://www.jianshu.com/p/64519f1b1137)
@@ -44,7 +42,8 @@ abstract class AbstractStringBuilder implements Appendable, CharSequence {
 
     AbstractStringBuilder(int capacity) {
         value = new char[capacity];
-    }}
+    }
+}
 ```
 
 **线程安全性**

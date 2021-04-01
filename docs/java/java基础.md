@@ -108,7 +108,40 @@ Java 语言既具有编译型语言的特征，也具有解释型语言的特征
 
 ### 包装类
 
-**Java 基本类型的包装类的大部分都实现了常量池技术，即 Byte,Short,Integer,Long,Character,Boolean；前面 4 种包装类默认创建了数值[-128，127] 的相应类型的缓存数据，Character 创建了数值在[0,127]范围的缓存数据，Boolean 直接返回 True Or False。如果超出对应范围仍然会去创建新的对象。** 
+#### 自动装箱与拆箱
+
+- **装箱**：将基本类型用它们对应的引用类型包装起来；
+- **拆箱**：将包装类型转换为基本数据类型；
+
+```java
+Integer i = new Integer(10); //Java SE5之前只支持这种写法。
+
+//Java SE5之后可以这么写，根据数值创建对应的 Integer对象，这就是装箱。
+Integer i = 10;  //装箱
+int n = i;   //拆箱
+```
+
+从反编译得到的字节码内容可以看出，在装箱的时候自动调用的是Integer的valueOf(int)方法。而在拆箱的时候自动调用的是Integer的intValue方法。
+
+更多内容见：[深入剖析 Java 中的装箱和拆箱](https://www.cnblogs.com/dolphin0520/p/3780005.html)
+
+
+
+#### 包装类的常量池
+
+**Java 基本类型的包装类除了两种浮点类型，其余都实现了常量池技术，即 Byte, Short, Integer, Long, Character, Boolean；前面 4 种包装类默认创建了数值[-128，127] 的相应类型的缓存数据，Character 创建了数值在[0,127]范围的缓存数据，Boolean 直接返回 True Or False。如果超出对应范围仍然会去创建新的对象。**
+
+```java
+private static class CharacterCache {
+    private CharacterCache(){}
+
+    static final Character cache[] = new Character[127 + 1];
+    static {
+        for (int i = 0; i < cache.length; i++)
+            cache[i] = new Character((char)i);
+    }
+}
+```
 
 #### 整型包装类值的比较
 
@@ -131,20 +164,6 @@ System.out.println(a.equals(b));//true
 **为啥把缓存设置为[-128，127]区间？性能和资源之间的权衡。**
 
 ```java
-private static class CharacterCache {
-    private CharacterCache(){}
-
-    static final Character cache[] = new Character[127 + 1];
-    static {
-        for (int i = 0; i < cache.length; i++)
-            cache[i] = new Character((char)i);
-    }
-}
-```
-
-**两种浮点数类型的包装类 Float,Double 并没有实现常量池技术。**
-
-```java
 Integer i1 = 33;
 Integer i2 = 33;
 System.out.println(i1 == i2);// 输出 true
@@ -162,11 +181,11 @@ System.out.println(i3 == i4);// 输出 false
 /**
 *此方法将始终缓存-128 到 127（包括端点）范围内的值，并可以缓存此范围之外的其他值。
 */
-    public static Integer valueOf(int i) {
-        if (i >= IntegerCache.low && i <= IntegerCache.high)
-            return IntegerCache.cache[i + (-IntegerCache.low)];
-        return new Integer(i);
-    }
+public static Integer valueOf(int i) {
+    if (i >= IntegerCache.low && i <= IntegerCache.high)
+        return IntegerCache.cache[i + (-IntegerCache.low)];
+    return new Integer(i);
+}
 ```
 
 **应用场景：**
@@ -201,15 +220,6 @@ i4==i5+i6   true
 解释：
 
 语句 i4 == i5 + i6，**因为+这个操作符不适用于 Integer 对象，首先 i5 和 i6 进行自动拆箱操作**，进行数值相加，即 i4 == 40。然后 Integer 对象无法与数值进行直接比较，所以 i4 自动拆箱转为 int 值 40，最终这条语句转为 40 == 40 进行数值比较。
-
-
-
-#### 自动装箱与拆箱
-
-- **装箱**：将基本类型用它们对应的引用类型包装起来；
-- **拆箱**：将包装类型转换为基本数据类型；
-
-更多内容见：[深入剖析 Java 中的装箱和拆箱](https://www.cnblogs.com/dolphin0520/p/3780005.html)
 
 
 
@@ -646,7 +656,7 @@ add.invoke(list, "kl");
 System.out.println(list)
 ```
 
-泛型一般有三种使用方式:泛型类、泛型接口、泛型方法。
+泛型一般有三种使用方式：泛型类、泛型接口、泛型方法。
 
 **1.泛型类**：
 
@@ -703,10 +713,10 @@ class GeneratorImpl<T> implements Generator<String>{
 }
 ```
 
-**3.泛型方法** ：接受各种类型的参数
+**3.泛型方法 ：接受各种类型的参数**
 
 ```java
-public static < E > void printArray(E[] inputArray) {
+public static <E> void printArray(E[] inputArray) {
     for ( E element : inputArray ){
         System.out.printf("%s ", element);
     }
@@ -726,9 +736,29 @@ printArray(stringArray);
 
 
 
-### 什么是类型擦除
+### 什么是泛型擦除/类型擦除
+
+[基础知识-Java泛型擦除](https://blog.csdn.net/qq_30878303/article/details/79639904)
 
 **Java 的泛型是伪泛型，这是因为 Java 在编译期间，所有的泛型信息都会被擦掉，这也就是通常所说类型擦除 。** 更多关于类型擦除的问题，可以查看这篇文章：[《Java 泛型类型擦除以及类型擦除带来的问题》](https://www.cnblogs.com/wuqinglong/p/9456193.html) 。
+
+```java
+public static void main(String[] args) {
+    ArrayList<String> list1 = new ArrayList<String>();
+    list1.add("abc");
+
+    ArrayList<Integer> list2 = new ArrayList<Integer>();
+    list2.add(123);
+
+    System.out.println(list1.getClass() == list2.getClass());
+}
+```
+
+`ArrayList<String>`和`ArrayList<Integer>`对象的`getClass()`方法获取类信息，用`==`比较，返回是true。说明对于JVM来说，这两种类是同一个类，在编译完成后泛型类型`String`和`Integer`都被擦除掉了，只剩下原始类型`ArrayList`。
+
+通过编译时的泛型约束使程序更安全，同时避免过多的创建类而造成的运行时的过度消耗。
+
+当然了，想给`ArrayList<String>`添加Integer类型的对象也是可以的，同样是在运行期间获取信息的反射了~
 
 
 
@@ -746,6 +776,8 @@ printArray(stringArray);
 
 
 ### Object、泛型、通配符区别
+
+==todo找一些?的例子==
 
 `?`是一个不确定的类型，通常用于**泛型方法的调用代码和形参**，不能用于定义类和泛型方法。用于读取未知类型容器中的元素
 
