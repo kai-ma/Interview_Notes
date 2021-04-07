@@ -1,21 +1,44 @@
-# HTTP
+[toc]
 
+# 一 、基础概念
 
-## 一 、基础概念
+## 什么是HTTP
 
-### 请求和响应报文
+HTTP（超文本传输协议）是一个简单的**请求-响应**协议，**它通常运行在TCP之上。**
 
-客户端发送一个请求报文给服务器，服务器根据请求报文中的信息进行处理，并将处理结果放入响应报文中返回给客户端。
+- 文本：html，字符串，~ ….
+- 超文本：图片，音乐，视频，定位，地图…….
+- 80
+
+Https：安全的
+
+- 443
+
+### 两个时代
+
+- http1.0
+
+  - HTTP/1.0：客户端可以与web服务器连接后，只能获得一个web资源，断开连接
+
+- http2.0
+
+  - HTTP/1.1：客户端可以与web服务器连接后，可以获得多个web资源。
+
+  
+
+## Http请求
+
+- 客户端---发请求（Request）---服务器
 
 请求报文结构：
 
-- 第一行是包含了请求方法、URL、协议版本；
+- 第一行是请求行：包含了请求方法、URL、协议版本；
 - 接下来的多行都是请求首部 Header，每个首部都有一个首部名称，以及对应的值。
 - 一个空行用来分隔首部和内容主体 Body
 - 最后是请求的内容主体
 
 ```
-GET http://www.example.com/ HTTP/1.1
+GET http://www.example.com/ HTTP/1.1 #请求行
 Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
 Accept-Encoding: gzip, deflate
 Accept-Language: zh-CN,zh;q=0.9,en;q=0.8
@@ -27,8 +50,49 @@ Proxy-Connection: keep-alive
 Upgrade-Insecure-Requests: 1
 User-Agent: Mozilla/5.0 xxx
 
-param1=1&param2=2
+param1=1&param2=2 #内容主体
 ```
+
+百度：
+
+```java
+Request URL:https://www.baidu.com/   请求地址
+Request Method:GET    get方法/post方法
+Status Code:200 OK    状态码：200
+Remote（远程） Address:14.215.177.39:443
+```
+
+```java
+Accept:text/html  
+Accept-Encoding:gzip, deflate, br
+Accept-Language:zh-CN,zh;q=0.9    语言
+Cache-Control:max-age=0
+Connection:keep-alive
+```
+
+#### 1、请求行
+
+- 请求行中的请求方式：GET
+- 请求方式：**Get，Post**，HEAD,DELETE,PUT,TRACT…
+  - get：请求能够携带的参数比较少，大小有限制，会在浏览器的URL地址栏显示数据内容，不安全，但高效
+  - post：请求能够携带的参数没有限制，大小没有限制，不会在浏览器的URL地址栏显示数据内容，安全，但不高效。
+
+#### 2、请求首部 Header
+
+```java
+Accept：告诉浏览器，它所支持的数据类型
+Accept-Encoding：支持哪种编码格式  GBK   UTF-8   GB2312  ISO8859-1
+Accept-Language：告诉浏览器，它的语言环境
+Cache-Control：缓存控制
+Connection：告诉浏览器，请求完成是断开还是保持连接
+HOST：主机..../.
+```
+
+
+
+## Http响应
+
+- 服务器---响应-----客户端
 
 响应报文结构：
 
@@ -65,18 +129,51 @@ X-Cache: HIT
 
 ```
 
-### URL
+百度：
+
+```java
+Cache-Control:private    缓存控制
+Connection:Keep-Alive    连接
+Content-Encoding:gzip    编码
+Content-Type:text/html   类型
+```
+
+#### 1.响应体
+
+```java
+Accept：告诉浏览器，它所支持的数据类型
+Accept-Encoding：支持哪种编码格式  GBK   UTF-8   GB2312  ISO8859-1
+Accept-Language：告诉浏览器，它的语言环境
+Cache-Control：缓存控制
+Connection：告诉浏览器，请求完成是断开还是保持连接
+HOST：主机..../.
+Refresh：告诉客户端，多久刷新一次；
+Location：让网页重新定位；
+```
+
+#### 2、响应状态码 
+
+200：请求响应成功  200
+
+3xx：请求重定向 
+
+- 重定向：你重新到我给你新位置去；
+
+4xx：找不到资源   404
+
+- 资源不存在；
+
+5xx：服务器代码错误   500       502:网关错误
+
+**常见面试题：**
+
+当你的浏览器中地址栏输入地址并回车的一瞬间到页面能够展示回来，经历了什么？
+
+
+
+## URL和URI
 
 HTTP 使用 URL（ **U** niform **R**esource **L**ocator，统一资源定位符）来定位资源，它是  URI（**U**niform **R**esource **I**dentifier，统一资源标识符）的子集，URL 在 URI 的基础上增加了定位能力。URI 除了包含 URL，还包含 URN（Uniform Resource Name，统一资源名称），它只是用来定义一个资源的名称，并不具备定位该资源的能力。例如 urn:isbn:0451450523 用来定义一个书籍名称，但是却没有表示怎么找到这本书。
-
-<div align="center"> <img src="https://cs-notes-1256109796.cos.ap-guangzhou.myqcloud.com/8441b2c4-dca7-4d6b-8efb-f22efccaf331.png" width="500px"> </div><br>
-
-- [wikipedia：统一资源标志符](https://zh.wikipedia.org/wiki/统一资源标志符)
-- [wikipedia: URL](https://en.wikipedia.org/wiki/URL)
-- [rfc2616：3.2.2 http URL](https://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.2.2)
-- [What is the difference between a URI, a URL and a URN?](https://stackoverflow.com/questions/176264/what-is-the-difference-between-a-uri-a-url-and-a-urn)
-
-
 
 ### URI和URL的区别是什么
 
@@ -88,7 +185,7 @@ URI的作用像身份证号一样，URL的作用更像家庭住址一样。URL�
 
 
 
-### 各种协议与HTTP协议之间的关系
+## **各种协议与HTTP协议之间的关系**
 
 一般面试官会通过这样的问题来考察你对计算机网络知识体系的理解。
 
@@ -98,9 +195,11 @@ URI的作用像身份证号一样，URL的作用更像家庭住址一样。URL�
 
 
 
-## 二、HTTP 方法
+# 二、HTTP 方法 ⭐
 
 客户端发送的   **请求报文**   第一行为请求行，包含了方法字段。
+
+## 常用方法
 
 ### GET
 
@@ -121,8 +220,6 @@ URI的作用像身份证号一样，URL的作用更像家庭住址一样。URL�
 > 传输实体主体
 
 POST 主要用来传输数据，而 GET 主要用来获取资源。
-
-更多 POST 与 GET 的比较请见第九章。
 
 ### PUT
 
@@ -197,7 +294,93 @@ CONNECT www.example.com:443 HTTP/1.1
 
 - [rfc2616：9 Method Definitions](https://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html)
 
-## 三、HTTP 状态码
+
+
+## GET 和 POST 比较
+
+### 作用
+
+GET 用于获取资源，而 POST 用于传输实体主体。
+
+### 参数
+
+GET 和 POST 的请求都能使用额外的参数，但是 GET 的参数是以查询字符串出现在 URL 中，而 POST 的参数存储在实体主体中。不能因为 POST 参数存储在实体主体中就认为它的安全性更高，因为照样可以通过一些抓包工具（Fiddler）查看。
+
+因为 URL 只支持 ASCII 码，因此 GET 的参数中如果存在中文等字符就需要先进行编码。例如 `中文` 会转换为 `%E4%B8%AD%E6%96%87`，而空格会转换为 `%20`。POST 参数支持标准字符集。
+
+```
+GET /test/demo_form.asp?name1=value1&name2=value2 HTTP/1.1
+```
+
+```
+POST /test/demo_form.asp HTTP/1.1
+Host: w3schools.com
+name1=value1&name2=value2
+```
+
+### 安全
+
+安全的 HTTP 方法不会改变服务器状态，也就是说它只是可读的。
+
+GET 方法是安全的，而 POST 却不是，因为 POST 的目的是传送实体主体内容，这个内容可能是用户上传的表单数据，上传成功之后，服务器可能把这个数据存储到数据库中，因此状态也就发生了改变。
+
+安全的方法除了 GET 之外还有：HEAD、OPTIONS。
+
+不安全的方法除了 POST 之外还有 PUT、DELETE。
+
+### 幂等性
+
+幂等的 HTTP 方法，同样的请求被执行一次与连续执行多次的效果是一样的，服务器的状态也是一样的。换句话说就是，幂等方法不应该具有副作用（统计用途除外）。
+
+所有的安全方法也都是幂等的。
+
+在正确实现的条件下，GET，HEAD，PUT 和 DELETE 等方法都是幂等的，而 POST 方法不是。
+
+GET /pageX HTTP/1.1 是幂等的，连续调用多次，客户端接收到的结果都是一样的：
+
+```
+GET /pageX HTTP/1.1
+GET /pageX HTTP/1.1
+GET /pageX HTTP/1.1
+GET /pageX HTTP/1.1
+```
+
+POST /add_row HTTP/1.1 不是幂等的，如果调用多次，就会增加多行记录：
+
+```
+POST /add_row HTTP/1.1   -> Adds a 1nd row
+POST /add_row HTTP/1.1   -> Adds a 2nd row
+POST /add_row HTTP/1.1   -> Adds a 3rd row
+```
+
+DELETE /idX/delete HTTP/1.1 是幂等的，即使不同的请求接收到的状态码不一样：
+
+```
+DELETE /idX/delete HTTP/1.1   -> Returns 200 if idX exists
+DELETE /idX/delete HTTP/1.1   -> Returns 404 as it just got deleted
+DELETE /idX/delete HTTP/1.1   -> Returns 404
+```
+
+### 可缓存
+
+如果要对响应进行缓存，需要满足以下条件：
+
+- 请求报文的 HTTP 方法本身是可缓存的，包括 GET 和 HEAD，但是 PUT 和 DELETE 不可缓存，POST 在多数情况下不可缓存的。
+- 响应报文的状态码是可缓存的，包括：200, 203, 204, 206, 300, 301, 404, 405, 410, 414, and 501。
+- 响应报文的 Cache-Control 首部字段没有指定不进行缓存。
+
+### XMLHttpRequest
+
+为了阐述 POST 和 GET 的另一个区别，需要先了解 XMLHttpRequest：
+
+> XMLHttpRequest 是一个 API，它为客户端提供了在客户端和服务器之间传输数据的功能。它提供了一个通过 URL 来获取数据的简单方式，并且不会使整个页面刷新。这使得网页只更新一部分页面而不会打扰到用户。XMLHttpRequest 在 AJAX 中被大量使用。
+
+- 在使用 XMLHttpRequest 的 POST 方法时，浏览器会先发送 Header 再发送 Data。但并不是所有浏览器会这么做，例如火狐就不会。
+- 而 GET 方法 Header 和 Data 会一起发送。
+
+
+
+# 三、HTTP 状态码
 
 服务器返回的   **响应报文**   中第一行为状态行，包含了状态码以及原因短语，用来告知客户端请求的结果。
 
@@ -251,7 +434,7 @@ CONNECT www.example.com:443 HTTP/1.1
 
 -   **503 Service Unavailable**  ：服务器暂时处于超负载或正在进行停机维护，现在无法处理请求。
 
-## 四、HTTP 首部
+# 四、HTTP 首部
 
 有 4 种类型的首部字段：通用首部字段、请求首部字段、响应首部字段和实体首部字段。
 
@@ -324,7 +507,7 @@ CONNECT www.example.com:443 HTTP/1.1
 |     Expires      | 实体主体过期的日期时间 |
 |  Last-Modified   | 资源的最后修改日期时间 |
 
-## 五、具体应用
+# 五、具体应用
 
 ### 连接管理
 
@@ -584,7 +767,7 @@ HTTP/1.1 使用虚拟主机技术，使得一台服务器拥有多个域名，�
 
 
 
-## 六、Cookie和Session ⭐
+# 六、Cookie和Session ⭐
 
 ### 会话
 
@@ -759,7 +942,7 @@ Cookie 和 Session都是用来跟踪浏览器用户身份的会话方式，但�
 
 
 
-## 七、HTTP 1.1、HTTP 2.0
+# 七、HTTP 1.1、HTTP 2.0
 
 ### HTTP 1.0和HTTP 1.1的区别
 
@@ -771,6 +954,7 @@ HTTP1.0最早在网页中使用是在1996年，那个时候只是使用一些较
 1. **错误状态响应码** :在HTTP1.1中新增了24个错误状态响应码，如409（Conflict）表示请求的资源与资源的当前状态发生冲突；410（Gone）表示服务器上的某个资源被永久性的删除。
 1. **缓存处理** :在HTTP1.0中主要使用header里的If-Modified-Since,Expires来做为缓存判断的标准，HTTP1.1则引入了更多的缓存控制策略例如Entity tag，If-Unmodified-Since, If-Match, If-None-Match等更多可供选择的缓存头来控制缓存策略。
 1. **带宽优化及网络连接的使用** :HTTP1.0中，存在一些浪费带宽的现象，例如客户端只是需要某个对象的一部分，而服务器却将整个对象送过来了，并且不支持断点续传功能，HTTP1.1则在请求头引入了range头域，它允许只请求资源的某个部分，即返回码是206（Partial Content），这样就方便了开发者自由的选择以便于充分利用带宽和连接。
+1. **Host头处理**，在HTTP1.0中认为每台服务器都绑定一个唯一的IP地址，因此，请求消息中的URL并没有传递主机名（hostname）。但随着虚拟主机技术的发展，在一台物理服务器上可以存在多个虚拟主机（Multi-homed Web Servers），并且它们共享一个IP地址。HTTP1.1的请求消息和响应消息都应支持Host头域，且请求消息中如果没有Host头域会报告一个错误（400 Bad Request）。
 
 
 
@@ -783,6 +967,14 @@ HTTP1.0最早在网页中使用是在1996年，那个时候只是使用一些较
 - 新增状态码 100
 - 支持分块传输编码
 - 新增缓存处理指令 max-age
+
+
+
+支持同时打开多个 TCP 连接：实现了请求/响应的并行。
+
+![img](images/http/同时打开多个TCP连接)
+
+
 
 
 
@@ -801,6 +993,8 @@ HTTP/1.x 实现简单是以牺牲性能为代价的：
 HTTP/2.0 将报文分成 HEADERS 帧和 DATA 帧，它们都是二进制格式的。
 
 <div align="center"> <img src="https://cs-notes-1256109796.cos.ap-guangzhou.myqcloud.com/86e6a91d-a285-447a-9345-c5484b8d0c47.png" width="400"/> </div><br>
+
+**多路复用**（MultiPlexing），即连接共享，即每一个request都是是用作连接共享机制的。一个request对应一个id，这样一个连接上可以有多个request，每个连接的request可以随机的混杂在一起，接收方可以根据request的 id将request再归属到各自不同的服务端请求里面。
 
 在通信过程中，只会有一个 TCP 连接存在，它承载了任意数量的双向数据流（Stream）。
 
@@ -828,9 +1022,11 @@ HTTP/2.0 要求客户端和服务器同时维护和更新一个包含之前见�
 
 
 
-## 八、HTTPS
+# 八、HTTPS
 
-> **HTTP协议运行在TCP之上，所有传输的内容都是明文，客户端和服务器端都无法验证对方的身份。HTTPS是运行在SSL/TLS之上的HTTP协议，SSL/TLS 运行在TCP之上。所有传输的内容都经过加密，加密采用对称加密，但对称加密的密钥用服务器方的证书进行了非对称加密。所以说，HTTP 安全性没有 HTTPS高，但是 HTTPS 比HTTP耗费更多服务器资源。**
+>  特别推荐：[知乎：彻底搞懂HTTPS的加密原理](https://zhuanlan.zhihu.com/p/43789231)
+
+**HTTP协议运行在TCP之上，所有传输的内容都是明文，客户端和服务器端都无法验证对方的身份。HTTPS是运行在SSL/TLS之上的HTTP协议，SSL/TLS 运行在TCP之上。所有传输的内容都经过加密，加密采用对称加密，但对称加密的密钥用服务器方的证书进行了非对称加密。所以说，HTTP 安全性没有 HTTPS高，但是 HTTPS 比HTTP耗费更多服务器资源。**
 
 ### HTTP 和 HTTPS 的区别？
 
@@ -879,6 +1075,15 @@ HTTPS 并不是新协议，而是让 HTTP 先和 SSL（Secure Sockets Layer）�
 - 使用非对称密钥加密方式，传输对称密钥加密方式所需要的 Secret Key，从而保证安全性;
 - 获取到 Secret Key 后，再使用对称密钥加密方式进行通信，从而保证效率。（下图中的 Session Key 就是 Secret Key）
 
+**具体过程**
+
+1. 首先客户端通过URL访问服务器**建立SSL连接。**
+2. 服务端收到客户端请求后，会将网站支持的**证书信息（证书中包含绑定的公钥）**传送一份给客户端。
+3. 客户端验证证书，确保服务端的的公钥没有被调换。
+4. 客户端的浏览器根据双方同意的安全等级，获得一致的对称加密密钥，建立**会话密钥**，然后**利用网站的公钥将会话密钥加密**，并传送给服务器。
+5. 服务器利用自己的**私钥解密出会话密钥。  这时候两端获取到了相同的密钥**
+6. 服务器利用会话密钥加密与客户端之间的通信（对称）。
+
 <div align="center"> <img src="https://cs-notes-1256109796.cos.ap-guangzhou.myqcloud.com/How-HTTPS-Works.png" width="600"/> </div><br>
 
 ### 认证
@@ -905,117 +1110,3 @@ HTTPS 的报文摘要功能之所以安全，是因为它结合了加密和认�
 
 - 因为需要进行加密解密等过程，因此速度会更慢；
 - 需要支付证书授权的高额费用。
-
-## 九、GET 和 POST 比较
-
-### 作用
-
-GET 用于获取资源，而 POST 用于传输实体主体。
-
-### 参数
-
-GET 和 POST 的请求都能使用额外的参数，但是 GET 的参数是以查询字符串出现在 URL 中，而 POST 的参数存储在实体主体中。不能因为 POST 参数存储在实体主体中就认为它的安全性更高，因为照样可以通过一些抓包工具（Fiddler）查看。
-
-因为 URL 只支持 ASCII 码，因此 GET 的参数中如果存在中文等字符就需要先进行编码。例如 `中文` 会转换为 `%E4%B8%AD%E6%96%87`，而空格会转换为 `%20`。POST 参数支持标准字符集。
-
-```
-GET /test/demo_form.asp?name1=value1&name2=value2 HTTP/1.1
-```
-
-```
-POST /test/demo_form.asp HTTP/1.1
-Host: w3schools.com
-name1=value1&name2=value2
-```
-
-### 安全
-
-安全的 HTTP 方法不会改变服务器状态，也就是说它只是可读的。
-
-GET 方法是安全的，而 POST 却不是，因为 POST 的目的是传送实体主体内容，这个内容可能是用户上传的表单数据，上传成功之后，服务器可能把这个数据存储到数据库中，因此状态也就发生了改变。
-
-安全的方法除了 GET 之外还有：HEAD、OPTIONS。
-
-不安全的方法除了 POST 之外还有 PUT、DELETE。
-
-### 幂等性
-
-幂等的 HTTP 方法，同样的请求被执行一次与连续执行多次的效果是一样的，服务器的状态也是一样的。换句话说就是，幂等方法不应该具有副作用（统计用途除外）。
-
-所有的安全方法也都是幂等的。
-
-在正确实现的条件下，GET，HEAD，PUT 和 DELETE 等方法都是幂等的，而 POST 方法不是。
-
-GET /pageX HTTP/1.1 是幂等的，连续调用多次，客户端接收到的结果都是一样的：
-
-```
-GET /pageX HTTP/1.1
-GET /pageX HTTP/1.1
-GET /pageX HTTP/1.1
-GET /pageX HTTP/1.1
-```
-
-POST /add_row HTTP/1.1 不是幂等的，如果调用多次，就会增加多行记录：
-
-```
-POST /add_row HTTP/1.1   -> Adds a 1nd row
-POST /add_row HTTP/1.1   -> Adds a 2nd row
-POST /add_row HTTP/1.1   -> Adds a 3rd row
-```
-
-DELETE /idX/delete HTTP/1.1 是幂等的，即使不同的请求接收到的状态码不一样：
-
-```
-DELETE /idX/delete HTTP/1.1   -> Returns 200 if idX exists
-DELETE /idX/delete HTTP/1.1   -> Returns 404 as it just got deleted
-DELETE /idX/delete HTTP/1.1   -> Returns 404
-```
-
-### 可缓存
-
-如果要对响应进行缓存，需要满足以下条件：
-
-- 请求报文的 HTTP 方法本身是可缓存的，包括 GET 和 HEAD，但是 PUT 和 DELETE 不可缓存，POST 在多数情况下不可缓存的。
-- 响应报文的状态码是可缓存的，包括：200, 203, 204, 206, 300, 301, 404, 405, 410, 414, and 501。
-- 响应报文的 Cache-Control 首部字段没有指定不进行缓存。
-
-### XMLHttpRequest
-
-为了阐述 POST 和 GET 的另一个区别，需要先了解 XMLHttpRequest：
-
-> XMLHttpRequest 是一个 API，它为客户端提供了在客户端和服务器之间传输数据的功能。它提供了一个通过 URL 来获取数据的简单方式，并且不会使整个页面刷新。这使得网页只更新一部分页面而不会打扰到用户。XMLHttpRequest 在 AJAX 中被大量使用。
-
-- 在使用 XMLHttpRequest 的 POST 方法时，浏览器会先发送 Header 再发送 Data。但并不是所有浏览器会这么做，例如火狐就不会。
-- 而 GET 方法 Header 和 Data 会一起发送。
-
-
-
-## 参考资料
-
-- 上野宣. 图解 HTTP[M]. 人民邮电出版社, 2014.
-- [MDN : HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP)
-- [HTTP/2 简介](https://developers.google.com/web/fundamentals/performance/http2/?hl=zh-cn)
-- [htmlspecialchars](http://php.net/manual/zh/function.htmlspecialchars.php)
-- [Difference between file URI and URL in java](http://java2db.com/java-io/how-to-get-and-the-difference-between-file-uri-and-url-in-java)
-- [How to Fix SQL Injection Using Java PreparedStatement & CallableStatement](https://software-security.sans.org/developer-how-to/fix-sql-injection-in-java-using-prepared-callable-statement)
-- [浅谈 HTTP 中 Get 与 Post 的区别](https://www.cnblogs.com/hyddd/archive/2009/03/31/1426026.html)
-- [Are http:// and www really necessary?](https://www.webdancers.com/are-http-and-www-necesary/)
-- [HTTP (HyperText Transfer Protocol)](https://www.ntu.edu.sg/home/ehchua/programming/webprogramming/HTTP_Basics.html)
-- [Web-VPN: Secure Proxies with SPDY & Chrome](https://www.igvita.com/2011/12/01/web-vpn-secure-proxies-with-spdy-chrome/)
-- [File:HTTP persistent connection.svg](http://en.wikipedia.org/wiki/File:HTTP_persistent_connection.svg)
-- [Proxy server](https://en.wikipedia.org/wiki/Proxy_server)
-- [What Is This HTTPS/SSL Thing And Why Should You Care?](https://www.x-cart.com/blog/what-is-https-and-ssl.html)
-- [What is SSL Offloading?](https://securebox.comodo.com/ssl-sniffing/ssl-offloading/)
-- [Sun Directory Server Enterprise Edition 7.0 Reference - Key Encryption](https://docs.oracle.com/cd/E19424-01/820-4811/6ng8i26bn/index.html)
-- [An Introduction to Mutual SSL Authentication](https://www.codeproject.com/Articles/326574/An-Introduction-to-Mutual-SSL-Authentication)
-- [The Difference Between URLs and URIs](https://danielmiessler.com/study/url-uri/)
-- [Cookie 与 Session 的区别](https://juejin.im/entry/5766c29d6be3ff006a31b84e#comment)
-- [COOKIE 和 SESSION 有什么区别](https://www.zhihu.com/question/19786827)
-- [Cookie/Session 的机制与安全](https://harttle.land/2015/08/10/cookie-session.html)
-- [HTTPS 证书原理](https://shijianan.com/2017/06/11/https/)
-- [What is the difference between a URI, a URL and a URN?](https://stackoverflow.com/questions/176264/what-is-the-difference-between-a-uri-a-url-and-a-urn)
-- [XMLHttpRequest](https://developer.mozilla.org/zh-CN/docs/Web/API/XMLHttpRequest)
-- [XMLHttpRequest (XHR) Uses Multiple Packets for HTTP POST?](https://blog.josephscott.org/2009/08/27/xmlhttprequest-xhr-uses-multiple-packets-for-http-post/)
-- [Symmetric vs. Asymmetric Encryption – What are differences?](https://www.ssl2buy.com/wiki/symmetric-vs-asymmetric-encryption-what-are-differences)
-- [Web 性能优化与 HTTP/2](https://www.kancloud.cn/digest/web-performance-http2)
-- [HTTP/2 简介](https://developers.google.com/web/fundamentals/performance/http2/?hl=zh-cn)
