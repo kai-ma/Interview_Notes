@@ -608,7 +608,7 @@ HashMap 只提供了 put 用于添加元素，putVal 方法只是给 put 方法�
 说明:上图有两个小问题：
 
 - 直接覆盖之后应该就会 return，不会有后续操作。
-- 当链表长度大于阈值（默认为 8）并且 HashMap 数组长度超过 64 的时候才会执行链表转红黑树的操作，否则就只是对数组扩容。参考 HashMap 的 `treeifyBin()` 方法。
+- **当链表长度大于阈值（默认为 8）并且 HashMap 数组长度超过 64 的时候才会执行链表转红黑树的操作**，否则就只是对数组扩容。参考 HashMap 的 `treeifyBin()` 方法。
 
 ```java
 public V put(K key, V value) {
@@ -894,15 +894,17 @@ for (String s : set) {
 
 ### HashMap死循环问题
 
-**多线程操作导致**
+[老生常谈，HashMap的死循环](https://www.jianshu.com/p/1e9cf0ac07f4)
 
-**主要原因在于 并发下的resize时Rehash 会造成元素之间会形成一个循环链表，get的时候出不来。1.8以后解决了，不过个人感觉这不是一个问题，并发环境用concurrenthashmap**
+[为什么多线程并发下HashMap会发生死循环](https://www.jianshu.com/p/8934257c3cbb)
+
+多线程并发下的扩容操作，两个线程都进行扩容，都创立了一个新数组。对于有hash冲突的位置，链表长度不止为1，两个线程都对链表进行操作，可能形成**循环链表。**然后get的时候在链表中循环，出不来。
+
+![img](images/HashMap/hashmap-deadwhile.png)
 
 
 
-主要原因在于并发下的 Rehash 会造成元素之间会形成一个循环链表。不过，jdk 1.8 后解决了这个问题，但是还是不建议在多线程下使用 HashMap，因为多线程下使用 HashMap 还是会存在其他问题比如数据丢失。并发环境下推荐使用 ConcurrentHashMap 。
-
-详情请查看：<https://coolshell.cn/articles/9606.html>
+jdk 1.8 后解决了这个问题，但是还是不建议在多线程下使用 HashMap，因为多线程下使用 HashMap 还是会存在其他问题比如数据丢失。并发环境下推荐使用 ConcurrentHashMap 。
 
 
 
@@ -982,10 +984,6 @@ class LRUCache {
 
 concurrenthashmap实现、hashtable和hashmap的区别
 
-map下有哪些线程安全？
-
-concurrenthashmap实现、hashtable和hashmap的区别
-
 concurrenthashmap 的 **resize 操作是怎么做的？需要加锁吗？**
 
 ConcurrentHashMap的put操作过程？
@@ -993,12 +991,6 @@ ConcurrentHashMap的put操作过程？
 HashMap线程安全吗?ConcurrentHashMap和hashTable有什么区别？
 
 同步锁的hashmap哪里1.7会出现volatie 1.8版本哪里会说到syn cas这样一延伸一下应该就不会单独问你5 6 两个问题 第二个问题 你回答了hashmap可以允许k v都为空但是Hashtbale不行 最后再解释一下为啥不行 菜鸡的建议 如果有错大佬勿喷
-
-谈谈Hashmap，为什么要用红黑树
-
-HashMap，ConcurrentHashMap
-
-LinkedHashMap 和 HashMap
 
 讲一下ConcurrentHashmap
 

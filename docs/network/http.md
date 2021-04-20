@@ -1,5 +1,7 @@
 [toc]
 
+**http://www.ruanyifeng.com/blog/2016/08/http.html （HTTP 协议入门- 阮一峰）**
+
 # 一 、基础概念
 
 ## 什么是HTTP

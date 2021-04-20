@@ -12,6 +12,46 @@
 
 
 
+### 字符串常量池  intern
+
+https://zhuanlan.zhihu.com/p/81035646
+
+**`intern`方法搜索字符串常量池，如果存在指定的字符串，就返回之；否则，就将该字符串放入常量池并返回之。**换句话说，`intern`方法保证每次返回的都是“同一个字符串对象”。
+
+那么问题来了，为什么`String`类包含这么一个奇怪的方法呢？
+
+要回答这个问题，我们先来看一下`String.equals`方法：
+
+```java
+public boolean equals(Object anObject) {
+    if (this == anObject) {
+        return true;
+    }
+    if (anObject instanceof String) {
+        String anotherString = (String)anObject;
+        int n = value.length;
+        if (n == anotherString.value.length) {
+            char v1[] = value;
+            char v2[] = anotherString.value;
+            int i = 0;
+            while (n-- != 0) {
+                if (v1[i] != v2[i])
+                    return false;
+                i++;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+```
+
+你发现了什么？比较两个字符串“是不是包含相同的数据”是一个非常，非常，非常慢的操作。如果二者不是同一个对象，`equals`方法要跑一个循环，遍历字符串中的所有字符。假如说这个字符串有一百万个字符呢……想都不敢想
+
+在很多对性能要求高的场合中，这种慢如乌龟的`equals`比较是不能容忍的（因为这种比较会非常频繁的发生，例如作为Map的key时）。因此，假如每次都调用`String.intern`获取同一个字符串对象的引用，在需要比较的时候，就可以成百上千倍地提高`equals`方法调用的性能。毕竟，比较两个字符串是不是同一个对象（`==`操作）只需要一个指令即可完成。
+
+
+
 #### String、StringBuffer、StringBuilder的区别
 
 [String，StringBuilder，StringBuffer 实现原理解析](https://www.jianshu.com/p/64519f1b1137)

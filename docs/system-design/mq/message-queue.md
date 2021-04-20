@@ -171,7 +171,7 @@ RabbitMQ的吞吐量5.95w/s，CPU资源消耗较高。它支持AMQP协议，实�
 
 
 
-### 顺序消费
+## 顺序消费
 
 在上面的技术架构介绍中，我们已经知道了 **`RocketMQ` 在主题上是无序的、它只有在队列层面才是保证有序** 的。
 
@@ -193,7 +193,7 @@ RabbitMQ的吞吐量5.95w/s，CPU资源消耗较高。它支持AMQP协议，实�
 
 
 
-### 重复消费
+## 重复消费
 
 emmm，就两个字—— **幂等** 。
 
@@ -211,7 +211,7 @@ emmm，就两个字—— **幂等** 。
 
 
 
-### 分布式事务
+## 分布式事务
 
 如何解释分布式事务呢？事务大家都知道吧？**要么都执行要么都不执行** 。在同一个系统中我们可以轻松地实现事务，但是在分布式架构中，我们有很多服务是部署在不同系统之间的，而不同服务之间又需要进行调用。比如此时我下订单然后增加积分，如果保证不了分布式事务的话，就会出现A系统下了订单，但是B系统增加积分失败或者A系统没有下订单，B系统却增加了积分。前者对用户不友好，后者对运营商不利，这是我们都不愿意见到的。
 
@@ -233,7 +233,7 @@ emmm，就两个字—— **幂等** 。
 
 
 
-### 消息堆积问题
+## 消息堆积问题
 
 在上面我们提到了消息队列一个很重要的功能——**削峰** 。那么如果这个峰值太大了导致消息堆积在队列中怎么办呢？
 
@@ -247,7 +247,7 @@ emmm，就两个字—— **幂等** 。
 
 
 
-### 回溯消费
+## 回溯消费
 
 回溯消费是指 `Consumer` 已经消费成功的消息，由于业务上需求需要重新消费，在`RocketMQ` 中， `Broker` 在向`Consumer` 投递成功消息后，**消息仍然需要保留** 。并且重新消费一般是按照时间维度，例如由于 `Consumer` 系统故障，恢复后需要重新消费1小时前的数据，那么 `Broker` 要提供一种机制，可以按照时间维度来回退消费进度。`RocketMQ` 支持按照时间回溯消费，时间维度精确到毫秒。
 
@@ -325,6 +325,373 @@ emmm，就两个字—— **幂等** 。
 讲到这里，你可能对 `RockeMQ` 的存储架构还有些模糊，没事，我们结合着图来理解一下。
 
 
+
+本文来自读者 [PR](https://github.com/Snailclimb/JavaGuide/pull/291)。
+<!-- TOC -->
+
+- [1 单机版消息中心](#1-%E5%8D%95%E6%9C%BA%E7%89%88%E6%B6%88%E6%81%AF%E4%B8%AD%E5%BF%83)
+- [2 分布式消息中心](#2-%E5%88%86%E5%B8%83%E5%BC%8F%E6%B6%88%E6%81%AF%E4%B8%AD%E5%BF%83)
+  - [2.1 问题与解决](#21-%E9%97%AE%E9%A2%98%E4%B8%8E%E8%A7%A3%E5%86%B3)
+    - [2.1.1 消息丢失的问题](#211-%E6%B6%88%E6%81%AF%E4%B8%A2%E5%A4%B1%E7%9A%84%E9%97%AE%E9%A2%98)
+    - [2.1.2 同步落盘怎么才能快](#212-%E5%90%8C%E6%AD%A5%E8%90%BD%E7%9B%98%E6%80%8E%E4%B9%88%E6%89%8D%E8%83%BD%E5%BF%AB)
+    - [2.1.3 消息堆积的问题](#213-%E6%B6%88%E6%81%AF%E5%A0%86%E7%A7%AF%E7%9A%84%E9%97%AE%E9%A2%98)
+    - [2.1.4 定时消息的实现](#214-%E5%AE%9A%E6%97%B6%E6%B6%88%E6%81%AF%E7%9A%84%E5%AE%9E%E7%8E%B0)
+    - [2.1.5 顺序消息的实现](#215-%E9%A1%BA%E5%BA%8F%E6%B6%88%E6%81%AF%E7%9A%84%E5%AE%9E%E7%8E%B0)
+    - [2.1.6 分布式消息的实现](#216-%E5%88%86%E5%B8%83%E5%BC%8F%E6%B6%88%E6%81%AF%E7%9A%84%E5%AE%9E%E7%8E%B0)
+    - [2.1.7 消息的 push 实现](#217-%E6%B6%88%E6%81%AF%E7%9A%84-push-%E5%AE%9E%E7%8E%B0)
+    - [2.1.8 消息重复发送的避免](#218-%E6%B6%88%E6%81%AF%E9%87%8D%E5%A4%8D%E5%8F%91%E9%80%81%E7%9A%84%E9%81%BF%E5%85%8D)
+    - [2.1.9 广播消费与集群消费](#219-%E5%B9%BF%E6%92%AD%E6%B6%88%E8%B4%B9%E4%B8%8E%E9%9B%86%E7%BE%A4%E6%B6%88%E8%B4%B9)
+    - [2.1.10 RocketMQ 不使用 ZooKeeper 作为注册中心的原因，以及自制的 NameServer 优缺点？](#2110-rocketmq-%E4%B8%8D%E4%BD%BF%E7%94%A8-zookeeper-%E4%BD%9C%E4%B8%BA%E6%B3%A8%E5%86%8C%E4%B8%AD%E5%BF%83%E7%9A%84%E5%8E%9F%E5%9B%A0%E4%BB%A5%E5%8F%8A%E8%87%AA%E5%88%B6%E7%9A%84-nameserver-%E4%BC%98%E7%BC%BA%E7%82%B9)
+    - [2.1.11 其它](#2111-%E5%85%B6%E5%AE%83)
+- [3 参考](#3-%E5%8F%82%E8%80%83)
+
+<!-- TOC -->
+
+# 1 单机版消息中心
+
+一个消息中心，最基本的需要支持多生产者、多消费者，例如下：
+
+```java
+class Scratch {
+
+    public static void main(String[] args) {
+        // 实际中会有 nameserver 服务来找到 broker 具体位置以及 broker 主从信息
+        Broker broker = new Broker();
+        Producer producer1 = new Producer();
+        producer1.connectBroker(broker);
+        Producer producer2 = new Producer();
+        producer2.connectBroker(broker);
+
+        Consumer consumer1 = new Consumer();
+        consumer1.connectBroker(broker);
+        Consumer consumer2 = new Consumer();
+        consumer2.connectBroker(broker);
+
+        for (int i = 0; i < 2; i++) {
+            producer1.asyncSendMsg("producer1 send msg" + i);
+            producer2.asyncSendMsg("producer2 send msg" + i);
+        }
+        System.out.println("broker has msg:" + broker.getAllMagByDisk());
+
+        for (int i = 0; i < 1; i++) {
+            System.out.println("consumer1 consume msg：" + consumer1.syncPullMsg());
+        }
+        for (int i = 0; i < 3; i++) {
+            System.out.println("consumer2 consume msg：" + consumer2.syncPullMsg());
+        }
+    }
+
+}
+
+class Producer {
+
+    private Broker broker;
+
+    public void connectBroker(Broker broker) {
+        this.broker = broker;
+    }
+
+    public void asyncSendMsg(String msg) {
+        if (broker == null) {
+            throw new RuntimeException("please connect broker first");
+        }
+        new Thread(() -> {
+            broker.sendMsg(msg);
+        }).start();
+    }
+}
+
+class Consumer {
+    private Broker broker;
+
+    public void connectBroker(Broker broker) {
+        this.broker = broker;
+    }
+
+    public String syncPullMsg() {
+        return broker.getMsg();
+    }
+
+}
+
+class Broker {
+
+    // 对应 RocketMQ 中 MessageQueue，默认情况下 1 个 Topic 包含 4 个 MessageQueue
+    private LinkedBlockingQueue<String> messageQueue = new LinkedBlockingQueue(Integer.MAX_VALUE);
+
+    // 实际发送消息到 broker 服务器使用 Netty 发送
+    public void sendMsg(String msg) {
+        try {
+            messageQueue.put(msg);
+            // 实际会同步或异步落盘，异步落盘使用的定时任务定时扫描落盘
+        } catch (InterruptedException e) {
+
+        }
+    }
+
+    public String getMsg() {
+        try {
+            return messageQueue.take();
+        } catch (InterruptedException e) {
+
+        }
+        return null;
+    }
+
+    public String getAllMagByDisk() {
+        StringBuilder sb = new StringBuilder("\n");
+        messageQueue.iterator().forEachRemaining((msg) -> {
+            sb.append(msg + "\n");
+        });
+        return sb.toString();
+    }
+}
+```
+
+问题：  
+
+1. 没有实现真正执行消息存储落盘
+2. 没有实现 NameServer 去作为注册中心，定位服务
+3. 使用 LinkedBlockingQueue 作为消息队列，注意，参数是无限大，在真正 RocketMQ 也是如此是无限大，理论上不会出现对进来的数据进行抛弃，但是会有内存泄漏问题（阿里巴巴开发手册也因为这个问题，建议我们使用自制线程池）  
+4. 没有使用多个队列（即多个 LinkedBlockingQueue），RocketMQ 的顺序消息是通过生产者和消费者同时使用同一个 MessageQueue 来实现，但是如果我们只有一个 MessageQueue，那我们天然就支持顺序消息
+5. 没有使用 MappedByteBuffer 来实现文件映射从而使消息数据落盘非常的快（实际 RocketMQ 使用的是 FileChannel+DirectBuffer）
+
+
+
+## 2.1 问题与解决
+
+### 2.1.1 消息丢失的问题
+
+1. 当你系统需要保证百分百消息不丢失，你可以使用生产者每发送一个消息，Broker 同步返回一个消息发送成功的反馈消息
+2. 即每发送一个消息，同步落盘后才返回生产者消息发送成功，这样只要生产者得到了消息发送生成的返回，事后除了硬盘损坏，都可以保证不会消息丢失
+3. 但是这同时引入了一个问题，同步落盘怎么才能快？
+
+### 2.1.2 同步落盘怎么才能快
+
+1. 使用 FileChannel + DirectBuffer 池，使用堆外内存，加快内存拷贝  
+2. 使用数据和索引分离，当消息需要写入时，使用 commitlog 文件顺序写，当需要定位某个消息时，查询index 文件来定位，从而减少文件IO随机读写的性能损耗
+
+### 2.1.3 消息堆积的问题
+
+1. 后台定时任务每隔72小时，删除旧的没有使用过的消息信息  
+2. 根据不同的业务实现不同的丢弃任务，具体参考线程池的 AbortPolicy，例如FIFO/LRU等（RocketMQ没有此策略）  
+3. 消息定时转移，或者对某些重要的 TAG 型（支付型）消息真正落库
+
+### 2.1.4 定时消息的实现
+
+1. 实际 RocketMQ 没有实现任意精度的定时消息，它只支持某些特定的时间精度的定时消息
+2. 实现定时消息的原理是：创建特定时间精度的 MessageQueue，例如生产者需要定时1s之后被消费者消费，你只需要将此消息发送到特定的 Topic，例如：MessageQueue-1 表示这个 MessageQueue 里面的消息都会延迟一秒被消费，然后 Broker 会在 1s 后发送到消费者消费此消息，使用 newSingleThreadScheduledExecutor 实现
+
+### 2.1.5 顺序消息的实现
+
+1. 与定时消息同原理，生产者生产消息时指定特定的 MessageQueue ，消费者消费消息时，消费特定的 MessageQueue，其实单机版的消息中心在一个 MessageQueue 就天然支持了顺序消息
+2. 注意：同一个 MessageQueue 保证里面的消息是顺序消费的前提是：消费者是串行的消费该 MessageQueue，因为就算 MessageQueue 是顺序的，但是当并行消费时，还是会有顺序问题，但是串行消费也同时引入了两个问题：
+
+>1. 引入锁来实现串行
+>2. 前一个消费阻塞时后面都会被阻塞
+
+### 2.1.6 分布式消息的实现
+
+1. 需要前置知识：2PC  
+2. RocketMQ4.3 起支持，原理为2PC，即两阶段提交，prepared->commit/rollback
+3. 生产者发送事务消息，假设该事务消息 Topic 为 Topic1-Trans，Broker 得到后首先更改该消息的 Topic 为 Topic1-Prepared，该 Topic1-Prepared 对消费者不可见。然后定时回调生产者的本地事务A执行状态，根据本地事务A执行状态，来是否将该消息修改为 Topic1-Commit 或 Topic1-Rollback，消费者就可以正常找到该事务消息或者不执行等
+
+>注意，就算是事务消息最后回滚了也不会物理删除，只会逻辑删除该消息
+
+### 2.1.7 消息的 push 实现
+
+1. 注意，RocketMQ 已经说了自己会有低延迟问题，其中就包括这个消息的 push 延迟问题
+2. 因为这并不是真正的将消息主动的推送到消费者，而是 Broker 定时任务每5s将消息推送到消费者
+
+### 2.1.8 消息重复发送的避免
+
+1. RocketMQ 会出现消息重复发送的问题，因为在网络延迟的情况下，这种问题不可避免的发生，如果非要实现消息不可重复发送，那基本太难，因为网络环境无法预知，还会使程序复杂度加大，因此默认允许消息重复发送
+2. RocketMQ 让使用者在消费者端去解决该问题，即需要消费者端在消费消息时支持幂等性的去消费消息
+3. 最简单的解决方案是每条消费记录有个消费状态字段，根据这个消费状态字段来是否消费或者使用一个集中式的表，来存储所有消息的消费状态，从而避免重复消费
+4. 具体实现可以查询关于消息幂等消费的解决方案
+
+### 2.1.9 广播消费与集群消费
+
+1. 消息消费区别：广播消费，订阅该 Topic 的消息者们都会消费**每个**消息。集群消费，订阅该 Topic 的消息者们只会有一个去消费**某个**消息
+2. 消息落盘区别：具体表现在消息消费进度的保存上。广播消费，由于每个消费者都独立的去消费每个消息，因此每个消费者各自保存自己的消息消费进度。而集群消费下，订阅了某个 Topic，而旗下又有多个 MessageQueue，每个消费者都可能会去消费不同的 MessageQueue，因此总体的消费进度保存在 Broker 上集中的管理
+
+### 2.1.10 RocketMQ 不使用 ZooKeeper 作为注册中心的原因，以及自制的 NameServer 优缺点？
+
+1. ZooKeeper 作为支持顺序一致性的中间件，在某些情况下，它为了满足一致性，会丢失一定时间内的可用性，RocketMQ 需要注册中心只是为了发现组件地址，在某些情况下，RocketMQ 的注册中心可以出现数据不一致性，这同时也是 NameServer 的缺点，因为 NameServer 集群间互不通信，它们之间的注册信息可能会不一致
+2. 另外，当有新的服务器加入时，NameServer 并不会立马通知到 Produer，而是由 Produer 定时去请求 NameServer 获取最新的 Broker/Consumer 信息（这种情况是通过 Producer 发送消息时，负载均衡解决）
+
+### 2.1.11 其它
+
+![][1]
+
+加分项咯 
+
+1. 包括组件通信间使用 Netty 的自定义协议
+2. 消息重试负载均衡策略（具体参考 Dubbo 负载均衡策略）
+3. 消息过滤器（Producer 发送消息到 Broker，Broker 存储消息信息，Consumer 消费时请求 Broker 端从磁盘文件查询消息文件时,在 Broker 端就使用过滤服务器进行过滤）  
+4. Broker 同步双写和异步双写中 Master 和 Slave 的交互
+5. Broker 在 4.5.0 版本更新中引入了基于 Raft 协议的多副本选举，之前这是商业版才有的特性 [ISSUE-1046][2]
+
+### 3 参考
+
+1. 《RocketMQ技术内幕》：https://blog.csdn.net/prestigeding/article/details/85233529
+2. 关于 RocketMQ 对 MappedByteBuffer 的一点优化：https://lishoubo.github.io/2017/09/27/MappedByteBuffer%E7%9A%84%E4%B8%80%E7%82%B9%E4%BC%98%E5%8C%96/
+3. 阿里中间件团队博客-十分钟入门RocketMQ：http://jm.taobao.org/2017/01/12/rocketmq-quick-start-in-10-minutes/
+4. 分布式事务的种类以及 RocketMQ 支持的分布式消息：https://www.infoq.cn/article/2018/08/rocketmq-4.3-release
+5. 滴滴出行基于RocketMQ构建企业级消息队列服务的实践：https://yq.aliyun.com/articles/664608
+6. 基于《RocketMQ技术内幕》源码注释：https://github.com/LiWenGu/awesome-rocketmq
+
+[1]: https://leran2deeplearnjavawebtech.oss-cn-beijing.aliyuncs.com/somephoto/RocketMQ%E6%B5%81%E7%A8%8B.png
+[2]: http://rocketmq.apache.org/release_notes/release-notes-4.5.0/
+
+
+
+## 那你们使用什么mq？基于什么做的选型？
+
+我们主要调研了几个主流的mq，kafka、rabbitmq、rocketmq、activemq，选型我们主要基于以下几个点去考虑：
+
+1. 由于我们系统的qps压力比较大，所以性能是首要考虑的要素。
+2. 开发语言，由于我们的开发语言是java，主要是为了方便二次开发。
+3. 对于高并发的业务场景是必须的，所以需要支持分布式架构的设计。
+4. 功能全面，由于不同的业务场景，可能会用到顺序消息、事务消息等。
+
+基于以上几个考虑，我们最终选择了RocketMQ。
+
+|            | Kafka              | RocketMQ                     | RabbitMQ               | ActiveMQ                 |
+| :--------- | :----------------- | :--------------------------- | :--------------------- | :----------------------- |
+| 单机吞吐量 | 10万级             | 10万级                       | 万级                   | 万级                     |
+| 开发语言   | Scala              | Java                         | Erlang                 | Java                     |
+| 高可用     | 分布式架构         | 分布式架构                   | 主从架构               | 主从架构                 |
+| 性能       | ms级               | ms级                         | us级                   | ms级                     |
+| 功能       | 只支持主要的MQ功能 | 顺序消息、事务消息等功能完善 | 并发强、性能好、延时低 | 成熟的社区产品、文档丰富 |
+
+### 你上面提到异步发送，那消息可靠性怎么保证？
+
+消息丢失可能发生在生产者发送消息、MQ本身丢失消息、消费者丢失消息3个方面。
+
+#### 生产者丢失
+
+生产者丢失消息的可能点在于程序发送失败抛异常了没有重试处理，或者发送的过程成功但是过程中网络闪断MQ没收到，消息就丢失了。
+
+由于同步发送的一般不会出现这样使用方式，所以我们就不考虑同步发送的问题，我们基于异步发送的场景来说。
+
+异步发送分为两个方式：**异步有回调和异步无回调**，无回调的方式，生产者发送完后不管结果可能就会造成消息丢失，而通过异步发送+回调通知+本地消息表的形式我们就可以做出一个解决方案。以下单的场景举例。
+
+1. 下单后先保存本地数据和MQ消息表，这时候消息的状态是发送中，如果本地事务失败，那么下单失败，事务回滚。
+2. 下单成功，直接返回客户端成功，异步发送MQ消息
+3. MQ回调通知消息发送结果，对应更新数据库MQ发送状态
+4. JOB轮询超过一定时间（时间根据业务配置）还未发送成功的消息去重试
+5. 在监控平台配置或者JOB程序处理超过一定次数一直发送不成功的消息，告警，人工介入。
+
+
+
+一般而言，对于大部分场景来说异步回调的形式就可以了，只有那种需要完全保证不能丢失消息的场景我们做一套完整的解决方案。
+
+#### MQ丢失
+
+如果生产者保证消息发送到MQ，而MQ收到消息后还在内存中，这时候宕机了又没来得及同步给从节点，就有可能导致消息丢失。
+
+比如RocketMQ：
+
+RocketMQ分为同步刷盘和异步刷盘两种方式，默认的是异步刷盘，就有可能导致消息还未刷到硬盘上就丢失了，可以通过设置为同步刷盘的方式来保证消息可靠性，这样即使MQ挂了，恢复的时候也可以从磁盘中去恢复消息。
+
+比如Kafka也可以通过配置做到：
+
+```
+acks=all 只有参与复制的所有节点全部收到消息，才返回生产者成功。这样的话除非所有的节点都挂了，消息才会丢失。
+replication.factor=N,设置大于1的数，这会要求每个partion至少有2个副本
+min.insync.replicas=N，设置大于1的数，这会要求leader至少感知到一个follower还保持着连接
+retries=N，设置一个非常大的值，让生产者发送失败一直重试
+```
+
+虽然我们可以通过配置的方式来达到MQ本身高可用的目的，但是都对性能有损耗，怎样配置需要根据业务做出权衡。
+
+#### 消费者丢失
+
+消费者丢失消息的场景：消费者刚收到消息，此时服务器宕机，MQ认为消费者已经消费，不会重复发送消息，消息丢失。
+
+RocketMQ默认是需要消费者回复ack确认，而kafka需要手动开启配置关闭自动offset。
+
+消费方不返回ack确认，重发的机制根据MQ类型的不同发送时间间隔、次数都不尽相同，如果重试超过次数之后会进入死信队列，需要手工来处理了。（Kafka没有这些）
+
+
+
+#### 你说到消费者消费失败的问题，那么如果一直消费失败导致消息积压怎么处理？
+
+因为考虑到时消费者消费一直出错的问题，那么我们可以从以下几个角度来考虑：
+
+1. 消费者出错，肯定是程序或者其他问题导致的，如果容易修复，先把问题修复，让consumer恢复正常消费
+2. 如果时间来不及处理很麻烦，做转发处理，写一个临时的consumer消费方案，先把消息消费，然后再转发到一个新的topic和MQ资源，这个新的topic的机器资源单独申请，要能承载住当前积压的消息
+3. 处理完积压数据后，修复consumer，去消费新的MQ和现有的MQ数据，新MQ消费完成后恢复原状
+
+
+
+#### 那如果消息积压达到磁盘上限，消息被删除了怎么办？
+
+最初，我们发送的消息记录是落库保存了的，而转发发送的数据也保存了，那么我们就可以通过这部分数据来找到丢失的那部分数据，再单独跑个脚本重发就可以了。如果转发的程序没有落库，那就和消费方的记录去做对比，只是过程会更艰难一点。
+
+### 说了这么多，那你说说RocketMQ实现原理吧？
+
+RocketMQ由NameServer注册中心集群、Producer生产者集群、Consumer消费者集群和若干Broker（RocketMQ进程）组成，它的架构原理是这样的：
+
+1. Broker在启动的时候去向所有的NameServer注册，并保持长连接，每30s发送一次心跳
+2. Producer在发送消息的时候从NameServer获取Broker服务器地址，根据负载均衡算法选择一台服务器来发送消息
+3. Conusmer消费消息的时候同样从NameServer获取Broker地址，然后主动拉取消息来消费
+
+### 为什么RocketMQ不使用Zookeeper作为注册中心呢？
+
+我认为有以下几个点是不使用zookeeper的原因：
+
+1. 根据CAP理论，同时最多只能满足两个点，而zookeeper满足的是CP，也就是说zookeeper并不能保证服务的可用性，zookeeper在进行选举的时候，整个选举的时间太长，期间整个集群都处于不可用的状态，而这对于一个注册中心来说肯定是不能接受的，作为服务发现来说就应该是为可用性而设计。
+2. 基于性能的考虑，NameServer本身的实现非常轻量，而且可以通过增加机器的方式水平扩展，增加集群的抗压能力，而zookeeper的写是不可扩展的，而zookeeper要解决这个问题只能通过划分领域，划分多个zookeeper集群来解决，首先操作起来太复杂，其次这样还是又违反了CAP中的A的设计，导致服务之间是不连通的。
+3. 持久化的机制来带的问题，ZooKeeper 的 ZAB 协议对每一个写请求，会在每个 ZooKeeper 节点上保持写一个事务日志，同时再加上定期的将内存数据镜像（Snapshot）到磁盘来保证数据的一致性和持久性，而对于一个简单的服务发现的场景来说，这其实没有太大的必要，这个实现方案太重了。而且本身存储的数据应该是高度定制化的。
+4. 消息发送应该弱依赖注册中心，而RocketMQ的设计理念也正是基于此，生产者在第一次发送消息的时候从NameServer获取到Broker地址后缓存到本地，如果NameServer整个集群不可用，短时间内对于生产者和消费者并不会产生太大影响。
+
+### 那Broker是怎么保存数据的呢？
+
+RocketMQ主要的存储文件包括commitlog文件、consumequeue文件、indexfile文件。
+
+Broker在收到消息之后，会把消息保存到commitlog的文件当中，而同时在分布式的存储当中，每个broker都会保存一部分topic的数据，同时，每个topic对应的messagequeue下都会生成consumequeue文件用于保存commitlog的物理位置偏移量offset，indexfile中会保存key和offset的对应关系。
+
+CommitLog文件保存于${Rocket_Home}/store/commitlog目录中，从图中我们可以明显看出来文件名的偏移量，每个文件默认1G，写满后自动生成一个新的文件。
+
+由于同一个topic的消息并不是连续的存储在commitlog中，消费者如果直接从commitlog获取消息效率非常低，所以通过consumequeue保存commitlog中消息的偏移量的物理地址，这样消费者在消费的时候先从consumequeue中根据偏移量定位到具体的commitlog物理文件，然后根据一定的规则（offset和文件大小取模）在commitlog中快速定位。
+
+#### Master和Slave之间是怎么同步数据的呢？
+
+而消息在master和slave之间的同步是根据raft协议来进行的：
+
+1. 在broker收到消息后，会被标记为uncommitted状态
+2. 然后会把消息发送给所有的slave
+3. slave在收到消息之后返回ack响应给master
+4. master在收到超过半数的ack之后，把消息标记为committed
+5. 发送committed消息给所有slave，slave也修改状态为committed
+
+#### 你知道RocketMQ为什么速度快吗？
+
+是因为使用了顺序存储、Page Cache和异步刷盘。
+
+1. 我们在写入commitlog的时候是顺序写入的，这样比随机写入的性能就会提高很多
+2. 写入commitlog的时候并不是直接写入磁盘，而是先写入操作系统的PageCache
+3. 最后由操作系统异步将缓存中的数据刷到磁盘
+
+### 什么是事务、半事务消息？怎么实现的？
+
+事务消息就是MQ提供的类似XA的分布式事务能力，通过事务消息可以达到分布式事务的最终一致性。
+
+半事务消息就是MQ收到了生产者的消息，但是没有收到二次确认，不能投递的消息。
+
+实现原理如下：
+
+1. 生产者先发送一条半事务消息到MQ
+2. MQ收到消息后返回ack确认
+3. 生产者开始执行本地事务
+4. 如果事务执行成功发送commit到MQ，失败发送rollback
+5. 如果MQ长时间未收到生产者的二次确认commit或者rollback，MQ对生产者发起消息回查
+6. 生产者查询事务执行最终状态
+7. 根据查询事务状态再次提交二次确认
+
+最终，如果MQ收到二次确认commit，就可以把消息投递给消费者，反之如果是rollback，消息会保存下来并且在3天后被删除。
 
 
 

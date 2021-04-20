@@ -707,7 +707,7 @@ set session transaction isolation level serializable;
 
 # MySQL锁
 
-### 锁的分类
+## 锁的分类
 
 - 按锁的粒度划分：行级锁以及表级锁。
 - 按锁级别划分：共享锁和排他锁。
@@ -807,7 +807,7 @@ select * from table_name_innodb where id = 3 lock in share mode;
 
 把上面会话1的读操作换成上面的lock in share mode，此时会话2的更新语句被阻塞，**在会话1commit之后，释放读锁，update语句才能加上写的排他锁，然后执行成功。**
 
-lock in share mode是共享锁，不会阻塞读操作。
+**lock in share mode是共享锁，不会阻塞读操作。**
 
 
 
@@ -847,7 +847,7 @@ select * from table_name_innodb where id = 3 for update;
 当前读是对记录会加锁的操作，以下语句都是当前读：
 
 ```sql
-select ... lock in share mode;  #这种是共享锁，其余都是排他锁
+select ... lock in share mode;  #这种是共享锁，不会阻塞读，会阻塞写。其余都是排他锁
 ```
 
 ```sql
@@ -941,7 +941,7 @@ UPDATE：新插入一条记录，并以当前系统的版本号作为新行的�
 
 #### Undo日志
 
-**MVCC 的多版本指的是多个版本的快照，快照存储在 Undo 日志中，**在 MVCC 中事务的修改操作（DELETE、INSERT、UPDATE）会为数据行新增一个版本快照。Undo日志通过回滚指针 ROLL_PTR 把一个数据行的所有快照连接起来。
+**MVCC 的多版本指的是多个版本的快照，快照存储在 Undo 日志中，**在 MVCC 中事务的修改操作（DELETE、INSERT、UPDATE）会为数据行新增一个版本快照。Undo日志通过回滚指针 ROLL_PTR 把一个数据行的所有快照连接起来。**回滚日志会先于数据持久化到磁盘上。这样就保证了即使遇到数据库突然宕机等情况，当用户再次启动数据库的时候，数据库还能够通过查询回滚日志来回滚将之前未完成的事务。**
 
 快照中除了记录事务版本号 TRX_ID 和操作之外，还记录了一个 bit 的 DEL 字段，用于标记是否被删除。
 
@@ -1192,7 +1192,7 @@ MySQL Innodb中跟数据持久性、一致性有关的日志，有以下几种�
 
 - Bin Log:是mysql服务层产生的日志，常用来进行**数据恢复、数据库复制**，常见的mysql主从架构，就是采用slave同步master的binlog实现的**（二进制语句）**
 - Redo Log: **Innodb特有。**记录了数据操作在物理层面的修改**（某个页做了什么修改）**，mysql中使用了大量缓存，修改操作时会直接修改内存，而不是立刻修改磁盘，事务进行中时会不断的产生redo log，**在事务提交时进行一次flush操作**，保存到磁盘中。**当数据库或主机失效重启时，会根据redo log进行数据的恢复**，如果redo log中有事务提交，则进行事务提交修改数据。
-- Undo Log: **回滚的反向操作+MVCC**  除了记录redo log外，当进行数据修改时还会记录undo log，undo log用于数据的撤回操作，它记录了修改的反向操作，比如，插入对应删除，修改对应修改为原来的数据，通过undo log可以实现事务回滚，并且可以根据undo log回溯到某个特定的版本的数据，实现MVCC
+- Undo Log: **回滚的反向操作+MVCC**  除了记录redo log外，当进行数据修改时还会记录undo log，undo log用于数据的撤回操作，它记录了修改的反向操作，比如，插入对应删除，修改对应修改为原来的数据，通过undo log可以实现事务回滚，并且可以根据undo log回溯到某个特定的版本的数据，实现MVCC。回滚日志会先于数据持久化到磁盘上。这样就保证了即使遇到数据库突然宕机等情况，当用户再次启动数据库的时候，数据库还能够通过查询回滚日志来回滚将之前未完成的事务。
 
 
 
@@ -1898,3 +1898,127 @@ pt-online-schema-change 它会首先建立一个与原表结构相同的新表�
         某个字段依赖于主键，而有其他字段依赖于该字段。这就是传递依赖。
         将一个实体信息的数据放在一个表内实现。
 ```
+
+
+
+# 面试问到的问题
+
+Spring默认是RC级别。InnoDB 存储引擎在**分布式事务**的情况下一般会用到 **SERIALIZABLE(可串行化)** 隔离级别。
+
+## MySQL死锁问题
+
+结合MySQL锁部分来看。
+
+**[MySQL 加锁处理分析（MVCC、快照读、当前读、GAP锁（间隙锁））](https://blog.csdn.net/destinm/article/details/105861606)**
+
+**[mysql串行化serializable隔离级别使用注意点](https://blog.csdn.net/Liu_York/article/details/87879542)**
+
+官方定义如下：两个事务都持有对方需要的锁，并且在等待对方释放，并且双方都不会释放自己的锁。此时会遇到死锁。
+
+当前读是对记录会加锁的操作，RR隔离级别下，以下语句都是当前读，都会加Gap锁。
+
+```sql
+select ... lock in share mode;  #这种是共享锁，不会阻塞读，会阻塞写。其余都是排他锁
+```
+
+```sql
+select ... for update  #排他锁
+update  #增删改都属于当前读，因为在增删改之前都会先当前读来读取最新值，然后再增删改。
+insert
+delete
+```
+
+**Serializable隔离级别，读不加锁就不再成立，所有的读操作，都是当前读。**
+
+### 为什么会形成死锁
+
+**串行化隔离级别下会出现死锁。**
+
+#### 两阶段锁协议（2PL）
+
+> 两阶段锁协议是指所有事务必须分两个阶段对数据加锁和解锁，在对任何数据进行读、写操作之前，事务首先要获得对该数据的封锁；在释放一个封锁之后，事务不再申请和获得任何其他封锁。
+
+对应到 MySQL 上分为两个阶段：加锁阶段与解锁阶段，并且保证加锁阶段与解锁阶段不相交。
+
+1. 扩展阶段（事务开始后，commit 之前）：获取锁
+2. 收缩阶段（commit 之后）：释放锁
+
+但是两阶段锁协议不要求事务必须一次将所有需要使用的数据加锁，并且在加锁阶段没有顺序要求，所以这种并发控制方式可能会形成死锁。
+
+![img](images/MySQL/2PL.png)
+
+**举例一**
+
+![在这里插入图片描述](images/MySQL/deadlock.png)
+
+这种死锁情况很容易理解，复杂的事务中不止有一句SQL，两个并发的SQL持有部分记录的锁，并尝试获取对方持有的锁。
+
+**举例二：**更可怕的是，如果索引使用不当甚至没有使用索引，可能会加全表锁，两个线程都加全表锁，都只加了一部分，死锁了！
+
+
+
+### MySQL 如何处理死锁
+
+MySQL有两种死锁处理方式：
+
+1. 等待，直到超时（innodb_lock_wait_timeout=50s）。
+2. **发起死锁检测，主动回滚一条事务，让其他事务继续执行（innodb_deadlock_detect=on）。**
+
+由于性能原因，一般都是使用死锁检测来进行处理死锁。
+
+##### 死锁检测
+
+死锁检测的原理是构建一个以事务为顶点、锁为边的有向图，判断有向图是否存在环，存在即有死锁。
+
+##### 回滚
+
+检测到死锁之后，选择插入更新或者删除的行数最少的事务回滚，基于 INFORMATION_SCHEMA.INNODB_TRX 表中的 trx_weight 字段来判断。
+
+### 如何避免发生死锁
+
+#### 收集死锁信息
+
+1. 利用命令 `SHOW ENGINE INNODB STATUS`查看死锁原因。
+2. 调试阶段开启 innodb_print_all_deadlocks，收集所有死锁日志。
+
+#### 减少死锁
+
+1. 使用事务，不使用 `lock tables` 。
+2. 保证没有长事务。
+3. 操作完之后立即提交事务，特别是在交互式命令行中。
+4. 如果在用 `(SELECT ... FOR UPDATE or SELECT ... LOCK IN SHARE MODE)`，尝试降低隔离级别。
+5. **修改多个表或者多个行的时候，`将修改的顺序保持一致`。**
+6. **创建索引，可以使创建的锁更少。**
+7. 最好不要用 `(SELECT ... FOR UPDATE or SELECT ... LOCK IN SHARE MODE)`。
+8. 如果上述都无法解决问题，那么尝试使用 `lock tables t1, t2, t3` 锁多张表
+
+
+
+## [一个有趣的问题：两个人相互转钱怎么保证成功](https://www.zhihu.com/question/268632336)
+
+两个事务 T1， T2
+
+T1 write A write B
+
+T2 write B write A
+
+T1，T2并发，
+
+如果调度的序列是这样的：
+
+T1 write A, T2 write B, T1 write B, T2 write A
+
+T1认为在T1应在T2之前，而T2认为T2应在T1之前，死锁了，违反锁定继续下去就不可串行化了。
+
+**解决办法：当然如果业务要求事务很长，那么一般会加个乐观锁来避免并发。整体操作加锁。分布式场景加分布式锁。保证T1 write A & T1 write B是原子操作。**
+
+乐观锁：可以数据库中加一个version字段。操作前先读version，操作更新语句条件-version没变。
+
+```sql
+select id, rent, version from t_public_rent_lease where id = 1;
+update t_public_rent_lease set rent = rent + 100 where id = 1 and version = ${version};
+```
+
+更新带上查询的version。
+
+[甚至Spring持久层不用Mybatis，用JPA的话，自带@version注解](https://www.cnblogs.com/wangzhongqiu/p/7550985.html)
